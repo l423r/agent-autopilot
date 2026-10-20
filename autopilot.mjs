@@ -1,0 +1,157 @@
+#!/usr/bin/env node
+// Autopilot CLI: run | once | status | resume
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { parsePlan, nextTask } from './lib/plan.mjs';
+import { classify } from './lib/classify.mjs';
+import { decide, applyResult, resume } from './lib/decide.mjs';
+import { loadState, saveState } from './lib/state.mjs';
+import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SERVICE = 'agent-autopilot';
+const MAX_SLEEP_CHUNK_MS = 60_000;
+
+function loadConfig() {
+  const path = process.env.AUTOPILOT_CONFIG ?? join(HERE, 'config.json');
+  const cfg = JSON.parse(readFileSync(path, 'utf8'));
+  cfg.autopilotDir ??= HERE;
+  cfg.stateDir ??= join(cfg.autopilotDir, 'state');
+  cfg.logDir ??= join(cfg.autopilotDir, 'logs');
+  return cfg;
+}
+
+const readPlan = cfg => parsePlan(readFileSync(resolve(cfg.projectDir, cfg.planPath), 'utf8'));
+
+function logEvent(cfg, message) {
+  mkdirSync(cfg.logDir, { recursive: true });
+  const line = `${new Date().toISOString()} ${message}`;
+  appendFileSync(join(cfg.logDir, 'autopilot.log'), line + '\n');
+  console.log(line);
+}
+
+// One decision + its action. Returns 'continue' | 'stop' | { sleepUntil: Date }.
+async function step(cfg) {
+  const now = new Date();
+  const state = loadState(cfg.stateDir);
+  const d = decide(state, readPlan(cfg), now, cfg);
+
+  if (d.action === 'stop') {
+    if (state.status !== d.status || state.reason !== d.reason) {
+      saveState(cfg.stateDir, { ...state, status: d.status, reason: d.reason, updatedAt: now.toISOString() });
+    }
+    logEvent(cfg, `${d.status}: ${d.reason}`);
+    return 'stop';
+  }
+  if (d.action === 'sleep') return { sleepUntil: d.until };
+
+  logEvent(cfg, `run ${d.task.id}: ${d.task.title}`);
+  saveState(cfg.stateDir, { ...state, status: 'running', currentTask: d.task.id, updatedAt: now.toISOString() });
+  const template = readFileSync(join(HERE, 'prompt.md'), 'utf8');
+  const raw = await runIteration({
+    task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
+    claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
+    timeoutMs: cfg.iterationTimeoutMinutes * 60_000,
+    prompt: buildPrompt(template, d.task, cfg),
+  });
+  const finishedAt = new Date();
+  const result = classify(raw, finishedAt, cfg);
+  const next = applyResult(state, d.task, result, readPlan(cfg), finishedAt, cfg);
+  saveState(cfg.stateDir, next);
+  logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
+  return 'continue';
+}
+
+function acquireLock(cfg) {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  const lock = join(cfg.stateDir, 'daemon.lock');
+  try {
+    const pid = Number(readFileSync(lock, 'utf8'));
+    if (pid > 0 && pid !== process.pid && isAlive(pid)) {
+      console.log(`Автопилот уже работает (pid ${pid})`);
+      return false;
+    }
+  } catch { /* no lock yet */ }
+  writeFileSync(lock, String(process.pid));
+  const release = () => rmSync(lock, { force: true });
+  process.on('exit', release);
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, async () => {
+      await killOrphan(cfg.stateDir);
+      process.exit(0);
+    });
+  }
+  return true;
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runLoop(cfg, once) {
+  if (!acquireLock(cfg)) return;
+  await killOrphan(cfg.stateDir);
+  for (;;) {
+    const r = await step(cfg);
+    if (r === 'stop') return;
+    if (r !== 'continue') {
+      if (once) {
+        console.log(`Следующая попытка: ${r.sleepUntil.toISOString()}`);
+        return;
+      }
+      const ms = Math.min(r.sleepUntil.getTime() - Date.now(), MAX_SLEEP_CHUNK_MS);
+      await new Promise(res => setTimeout(res, Math.max(ms, 1000)));
+      continue;
+    }
+    if (once) return;
+  }
+}
+
+function status(cfg) {
+  const s = loadState(cfg.stateDir);
+  const plan = readPlan(cfg);
+  const done = plan.tasks.filter(t => t.done).length;
+  const next = nextTask(plan);
+  let apk = null;
+  try {
+    const lines = readFileSync(resolve(cfg.projectDir, cfg.progressPath), 'utf8').split('\n').filter(l => /^\s*APK:/.test(l));
+    apk = lines.at(-1)?.trim() ?? null;
+  } catch { /* no progress file yet */ }
+  console.log([
+    `Статус: ${s.status}`,
+    `Прогресс: ${done}/${plan.tasks.length} задач`,
+    `Текущая задача: ${s.currentTask ?? '—'}`,
+    `Следующая по плану: ${next ? `${next.id}: ${next.title}${next.manual ? ' [manual]' : ''}` : '—'}`,
+    `Следующая попытка: ${s.nextAttemptAt ?? '—'}`,
+    `Причина: ${s.reason ?? '—'}`,
+    apk ? `Последний ${apk}` : 'APK: ещё не собирался',
+  ].join('\n'));
+}
+
+function doResume(cfg) {
+  const s = loadState(cfg.stateDir);
+  saveState(cfg.stateDir, { ...resume(s), updatedAt: new Date().toISOString() });
+  logEvent(cfg, `resume (было: ${s.status})`);
+  if (!process.env.AUTOPILOT_CONFIG) {
+    const installed = spawnSync('systemctl', ['cat', SERVICE], { stdio: 'ignore' }).status === 0;
+    if (installed) spawnSync('systemctl', ['start', SERVICE], { stdio: 'inherit' });
+  }
+}
+
+const cmd = process.argv[2];
+const cfg = loadConfig();
+if (cmd === 'run') await runLoop(cfg, false);
+else if (cmd === 'once') await runLoop(cfg, true);
+else if (cmd === 'status') status(cfg);
+else if (cmd === 'resume') doResume(cfg);
+else {
+  console.log('Использование: autopilot.mjs run | once | status | resume');
+  process.exitCode = 2;
+}
