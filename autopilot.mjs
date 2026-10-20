@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parsePlan, nextTask } from './lib/plan.mjs';
 import { classify } from './lib/classify.mjs';
-import { decide, applyResult, resume } from './lib/decide.mjs';
+import { decide, applyResult, resume, markRunning } from './lib/decide.mjs';
+import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 
@@ -48,7 +49,7 @@ async function step(cfg) {
   if (d.action === 'sleep') return { sleepUntil: d.until };
 
   logEvent(cfg, `run ${d.task.id}: ${d.task.title}`);
-  saveState(cfg.stateDir, { ...state, status: 'running', currentTask: d.task.id, updatedAt: now.toISOString() });
+  saveState(cfg.stateDir, markRunning(state, d.task, now));
   const template = readFileSync(join(HERE, 'prompt.md'), 'utf8');
   const raw = await runIteration({
     task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
@@ -58,7 +59,14 @@ async function step(cfg) {
   });
   const finishedAt = new Date();
   const result = classify(raw, finishedAt, cfg);
-  const next = applyResult(state, d.task, result, readPlan(cfg), finishedAt, cfg);
+  let planAfter;
+  try {
+    planAfter = readPlan(cfg);
+  } catch (err) {
+    logEvent(cfg, `план не читается после ${d.task.id}: ${err.message}`);
+    planAfter = { tasks: [] };
+  }
+  const next = applyResult(state, d.task, result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result, planAfter, finishedAt, cfg);
   saveState(cfg.stateDir, next);
   logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
   return 'continue';
@@ -67,14 +75,12 @@ async function step(cfg) {
 function acquireLock(cfg) {
   mkdirSync(cfg.stateDir, { recursive: true });
   const lock = join(cfg.stateDir, 'daemon.lock');
-  try {
-    const pid = Number(readFileSync(lock, 'utf8'));
-    if (pid > 0 && pid !== process.pid && isAlive(pid)) {
-      console.log(`Автопилот уже работает (pid ${pid})`);
-      return false;
-    }
-  } catch { /* no lock yet */ }
-  writeFileSync(lock, String(process.pid));
+  const holder = livePid(lock);
+  if (holder && holder !== process.pid) {
+    console.log(`Автопилот уже работает (pid ${holder})`);
+    return false;
+  }
+  writeFileSync(lock, pidRecord(process.pid));
   const release = () => rmSync(lock, { force: true });
   process.on('exit', release);
   for (const sig of ['SIGINT', 'SIGTERM']) {
@@ -84,15 +90,6 @@ function acquireLock(cfg) {
     });
   }
   return true;
-}
-
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function runLoop(cfg, once) {

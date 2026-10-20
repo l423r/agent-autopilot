@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPrompt, runIteration, killOrphan } from '../lib/runner.mjs';
+import { pidRecord } from '../lib/pidfile.mjs';
 
 const fake = fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url));
 const task = { id: 'Task 2', title: 'Second', phase: null, manual: false, done: false, lastInPhase: true };
@@ -45,9 +46,22 @@ test('killOrphan kills leftover child', async () => {
   await new Promise(r => setTimeout(r, 200));
   const { mkdirSync } = await import('node:fs');
   mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(stateDir, 'child.pid'), String(child.pid));
+  writeFileSync(join(stateDir, 'child.pid'), pidRecord(child.pid));
   await killOrphan(stateDir);
   await new Promise(r => setTimeout(r, 200));
   assert.equal(alive(child.pid), false);
   assert.equal(existsSync(join(stateDir, 'child.pid')), false);
+});
+
+test('killOrphan ignores a pid recorded in another boot', async () => {
+  const { stateDir } = setup();
+  const child = spawn(fake, [], { env: { ...process.env, FAKE_MODE: 'hang' }, stdio: 'ignore', detached: true });
+  await new Promise(r => setTimeout(r, 200));
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, 'child.pid'), `${child.pid} 00000000-0000-0000-0000-000000000000 1`);
+  await killOrphan(stateDir);
+  assert.equal(alive(child.pid), true);
+  assert.equal(existsSync(join(stateDir, 'child.pid')), false);
+  process.kill(-child.pid, 'SIGKILL');
 });

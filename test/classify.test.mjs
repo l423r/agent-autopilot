@@ -61,3 +61,9 @@ test('successful run whose text mentions limits stays ok', () => {
   const out = JSON.stringify({ type: 'result', is_error: false, result: 'Implemented usage limit parsing, resets 3pm handled' });
   assert.equal(classify({ exitCode: 0, output: out, timedOut: false }, now, cfg).kind, 'ok');
 });
+test('failed run mentioning another service authentication is an error, not auth', () => {
+  assert.equal(classify({ exitCode: 1, output: 'eas build failed: Expo authentication required', timedOut: false }, now, cfg).kind, 'error');
+});
+test('claude login prompt is auth', () => {
+  assert.equal(classify({ exitCode: 1, output: 'Invalid API key · Please run /login', timedOut: false }, now, cfg).kind, 'auth');
+});

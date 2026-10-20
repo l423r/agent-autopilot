@@ -8,5 +8,5 @@
   "iterationTimeoutMinutes": 60,
   "pauseAfterPhase": false,
   "limitPatterns": ["usage limit", "limit reached", "rate limit", "out of extra usage", "resets? (at )?\\d"],
-  "authPatterns": ["/login", "not logged in", "invalid api key", "oauth token (has )?expired", "authentication"]
+  "authPatterns": ["please run /login", "not logged in", "invalid api key", "oauth token (has )?expired", "authentication_error"]
 }

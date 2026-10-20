@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pidRecord } from '../lib/pidfile.mjs';
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL('../autopilot.mjs', import.meta.url));
@@ -28,7 +29,7 @@ function setup(progress = '') {
   const cfg = {
     ...JSON.parse(readFileSync(join(repo, 'config.example.json'), 'utf8')),
     projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
-    autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'),
+    autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'), retryMinutes: 0.01,
   };
   writeFileSync(join(root, 'config.json'), JSON.stringify(cfg));
   return { root, cfg };
@@ -67,7 +68,7 @@ test('run completes when fake ticks boxes', async () => {
 test('second daemon exits immediately', async () => {
   const { root } = setup();
   mkdirSync(join(root, 'state'), { recursive: true });
-  writeFileSync(join(root, 'state', 'daemon.lock'), String(process.pid));
+  writeFileSync(join(root, 'state', 'daemon.lock'), pidRecord(process.pid));
   const { stdout } = await exec(root, ['run'], 'tick');
   assert.match(stdout, /уже работает/);
   assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /- \[ \]/);
@@ -86,4 +87,20 @@ test('resume clears halted state', async () => {
   assert.equal(state(root).status, 'halted');
   await exec(root, ['resume']);
   assert.equal(state(root).status, 'idle');
+});
+
+test('stale lock from a previous boot does not block the daemon', async () => {
+  const { root } = setup();
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'state', 'daemon.lock'), `${process.pid} 00000000-0000-0000-0000-000000000000 1`);
+  await exec(root, ['run'], 'tick');
+  assert.equal(state(root).status, 'done');
+});
+
+test('daemon killed mid-iteration still counts the attempt', async () => {
+  const { root } = setup();
+  await exec(root, ['once'], 'killparent').catch(() => {});
+  const s = state(root);
+  assert.equal(s.status, 'running');
+  assert.equal(s.attempts['Task 2'], 1);
 });

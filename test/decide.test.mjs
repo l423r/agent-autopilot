@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parsePlan } from '../lib/plan.mjs';
-import { decide, applyResult, resume, initialState } from '../lib/decide.mjs';
+import { decide, applyResult, resume, initialState, markRunning } from '../lib/decide.mjs';
 
 const baseCfg = JSON.parse(readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
 const cfg = { ...baseCfg };
@@ -60,7 +60,20 @@ test('third failure halts', () => {
 test('ok without ticked boxes counts as failure', () => {
   const s = applyResult(initialState(), task2, { kind: 'ok' }, plan, now, cfg);
   assert.equal(s.attempts['Task 2'], 1);
-  assert.equal(s.status, 'idle');
+  assert.equal(s.status, 'sleeping');
+});
+
+test('failure waits retryMinutes before the next attempt', () => {
+  const s = applyResult(initialState(), task2, { kind: 'error' }, plan, now, cfg);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.nextAttemptAt, new Date(now.getTime() + 15 * 60_000).toISOString());
+  assert.equal(decide(s, plan, now, cfg).action, 'sleep');
+});
+
+test('crash-time bump: state saved as running already holds the attempt', () => {
+  const running = markRunning(initialState(), task2, now);
+  assert.equal(running.status, 'running');
+  assert.equal(running.attempts['Task 2'], 1);
 });
 
 test('done task resets attempts', () => {

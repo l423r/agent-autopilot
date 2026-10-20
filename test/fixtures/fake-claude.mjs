@@ -20,6 +20,8 @@ if (mode === 'ok') {
     writeFileSync(process.env.FAKE_PLAN, lines.join('\n'));
   }
   result(false, 'ticked');
+} else if (mode === 'killparent') {
+  process.kill(process.ppid, 'SIGKILL');
 } else if (mode === 'hang') {
   console.log('working...');
   setInterval(() => {}, 1000);
