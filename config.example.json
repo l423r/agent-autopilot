@@ -1,0 +1,12 @@
+{
+  "projectDir": "/root/sigaret-counter",
+  "planPath": "docs/superpowers/plans/2026-10-20-sigaret-counter-app.md",
+  "autopilotDir": "/root/agent-autopilot",
+  "progressPath": "docs/superpowers/progress.md",
+  "retryMinutes": 15,
+  "maxAttempts": 3,
+  "iterationTimeoutMinutes": 60,
+  "pauseAfterPhase": false,
+  "limitPatterns": ["usage limit", "limit reached", "rate limit", "out of extra usage", "resets? (at )?\\d"],
+  "authPatterns": ["/login", "not logged in", "invalid api key", "oauth token (has )?expired", "authentication"]
+}
