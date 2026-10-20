@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -103,4 +103,53 @@ test('daemon killed mid-iteration still counts the attempt', async () => {
   const s = state(root);
   assert.equal(s.status, 'running');
   assert.equal(s.attempts['Task 2'], 1);
+});
+
+// A project repo with a bare "origin" and one local commit that is not pushed yet.
+function setupGit(extra) {
+  const ctx = setup();
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim();
+  const remote = mkdtempSync(join(tmpdir(), 'ap-remote-'));
+  git(remote, 'init', '-q', '--bare', '-b', 'main');
+  git(ctx.root, 'init', '-q', '-b', 'main');
+  git(ctx.root, 'config', 'user.email', 't@t');
+  git(ctx.root, 'config', 'user.name', 't');
+  writeFileSync(join(ctx.root, '.gitignore'), 'state/\nlogs/\nconfig.json\n');
+  git(ctx.root, 'add', '-A');
+  git(ctx.root, 'commit', '-q', '-m', 'init');
+  git(ctx.root, 'remote', 'add', 'origin', remote);
+  git(ctx.root, 'push', '-q', '-u', 'origin', 'main');
+  writeFileSync(join(ctx.root, 'work.txt'), 'x');
+  git(ctx.root, 'add', 'work.txt');
+  git(ctx.root, 'commit', '-q', '-m', 'work');
+  writeFileSync(join(ctx.root, 'config.json'), JSON.stringify({ ...ctx.cfg, ...extra }));
+  return { ...ctx, remote, head: () => git(ctx.root, 'rev-parse', 'HEAD'), remoteHead: () => git(remote, 'rev-parse', 'main') };
+}
+
+test('pushAfterTask pushes the project after each finished task', async () => {
+  const g = setupGit({ pushAfterTask: true });
+  await exec(g.root, ['run'], 'tick');
+  assert.equal(state(g.root).status, 'done');
+  assert.equal(g.remoteHead(), g.head());
+  assert.match(readFileSync(join(g.root, 'logs', 'autopilot.log'), 'utf8'), /push Task 2: ок/);
+});
+
+test('without pushAfterTask nothing is pushed', async () => {
+  const g = setupGit({});
+  await exec(g.root, ['run'], 'tick');
+  assert.notEqual(g.remoteHead(), g.head());
+});
+
+test('a failed push is logged and does not stop the autopilot', async () => {
+  const g = setupGit({ pushAfterTask: true });
+  rmSync(g.remote, { recursive: true, force: true });
+  await exec(g.root, ['run'], 'tick');
+  assert.equal(state(g.root).status, 'done');
+  assert.match(readFileSync(join(g.root, 'logs', 'autopilot.log'), 'utf8'), /push Task 2: не удался/);
+});
+
+test('an unfinished task is not pushed', async () => {
+  const g = setupGit({ pushAfterTask: true });
+  await exec(g.root, ['once'], 'ok');
+  assert.notEqual(g.remoteHead(), g.head());
 });

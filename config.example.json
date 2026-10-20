@@ -7,6 +7,7 @@
   "maxAttempts": 3,
   "iterationTimeoutMinutes": 60,
   "pauseAfterPhase": false,
+  "pushAfterTask": false,
   "limitPatterns": ["usage limit", "limit reached", "rate limit", "out of extra usage", "resets? (at )?\\d"],
   "authPatterns": ["please run /login", "not logged in", "invalid api key", "oauth token (has )?expired", "authentication_error"]
 }

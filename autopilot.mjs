@@ -33,6 +33,14 @@ function logEvent(cfg, message) {
   console.log(line);
 }
 
+// `git push` of the project's current branch to its upstream. A failure is only logged:
+// the commits stay local and go out with the next successful push.
+function pushProject(cfg, task) {
+  const r = spawnSync('git', ['push'], { cwd: cfg.projectDir, encoding: 'utf8', timeout: 120_000 });
+  const detail = `${r.stderr ?? ''}${r.error?.message ?? ''}`.trim().split('\n').at(-1);
+  logEvent(cfg, r.status === 0 ? `push ${task.id}: ок` : `push ${task.id}: не удался — ${detail}`);
+}
+
 // One decision + its action. Returns 'continue' | 'stop' | { sleepUntil: Date }.
 async function step(cfg) {
   const now = new Date();
@@ -69,6 +77,7 @@ async function step(cfg) {
   const next = applyResult(state, d.task, result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result, planAfter, finishedAt, cfg);
   saveState(cfg.stateDir, next);
   logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
+  if (cfg.pushAfterTask && planAfter.tasks.find(t => t.id === d.task.id)?.done) pushProject(cfg, d.task);
   return 'continue';
 }
 
