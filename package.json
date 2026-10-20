@@ -1,0 +1,11 @@
+{
+  "name": "agent-autopilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs Claude Code through a checkbox plan, surviving usage limits, crashes and reboots",
+  "scripts": {
+    "test": "TZ=UTC node --test"
+  },
+  "engines": { "node": ">=20" }
+}
