@@ -1,0 +1,18 @@
+[Unit]
+Description=Agent autopilot: runs Claude Code through a checkbox plan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/agent-autopilot
+ExecStart=/usr/bin/node /root/agent-autopilot/autopilot.mjs run
+Environment=HOME=/root
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/root/.config/agent-autopilot.env
+# exit 0 = done / halted / paused / waiting for a person: stay stopped until `resume`
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
