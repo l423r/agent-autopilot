@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stand-in for `claude -p --output-format stream-json` in web chat tests. Behaviour is chosen by FAKE_STREAM;
-// FAKE_ARGV, if set, receives the argv as JSON.
+// FAKE_ARGV, if set, receives the argv as JSON; FAKE_PARTS, if set, is a JSON array of answer chunks.
 import { writeFileSync } from 'node:fs';
 
 const mode = process.env.FAKE_STREAM ?? 'ok';
@@ -22,7 +22,7 @@ if (mode === 'limit') {
   emit({ type: 'result', subtype: 'success', is_error: true, result: 'Claude usage limit reached ∙ resets 3pm', session_id: sessionId });
   process.exit(1);
 }
-const parts = ['Привет', ', это', ' планировщик.'];
+const parts = process.env.FAKE_PARTS ? JSON.parse(process.env.FAKE_PARTS) : ['Привет', ', это', ' планировщик.'];
 for (const p of parts) {
   if (mode === 'slow') await sleep(300);
   text(p);

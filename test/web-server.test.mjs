@@ -201,6 +201,7 @@ test('GET /api/plan returns markdown and task counts', async () => {
   assert.ok(p.total > 0);
   assert.equal(p.tasks.length, p.total);
   assert.equal(p.done, p.tasks.filter(t => t.done).length);
+  for (const t of p.tasks) assert.ok(Number.isInteger(t.boxes) && Number.isInteger(t.checked), `${t.id} has step counts`);
 });
 
 test('GET /api/status returns statusText and state', async () => {
@@ -263,4 +264,8 @@ test('the real panel page: three tabs, relative markdown.mjs, no absolute /api p
   assert.doesNotMatch(html, /['"`(]\/api/);
   assert.doesNotMatch(html, /(src|href|action)=["']\//);
   assert.doesNotMatch(html, /\.innerHTML\s*=(?!\s*(?:renderMarkdown\(|''|""|``))/);
+  // Without an inline icon the browser asks for /favicon.ico and logs a 404 on every load.
+  assert.match(html, /<link rel="icon" href="data:/);
+  // parsePlan's phase is already "Этап N": prefixing it again shows "Этап Этап 1".
+  assert.doesNotMatch(html, /`Этап \$\{/);
 });

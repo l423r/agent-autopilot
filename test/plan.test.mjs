@@ -34,3 +34,9 @@ test('checkboxes in fenced code blocks are ignored', () => {
 test('task without checkboxes counts as done', () => {
   assert.equal(parsePlan('### Task 1: a\ntext only').tasks[0].done, true);
 });
+
+test('tasks report their step counts', () => {
+  const p = parsePlan('### Task 1: a\n- [x] s1\n- [ ] s2\n- [X] s3');
+  assert.equal(p.tasks[0].boxes, 3);
+  assert.equal(p.tasks[0].checked, 2);
+});

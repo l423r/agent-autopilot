@@ -7,5 +7,10 @@
   "scripts": {
     "test": "TZ=UTC node --test"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1"
+  }
 }
