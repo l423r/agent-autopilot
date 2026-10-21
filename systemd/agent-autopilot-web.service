@@ -1,0 +1,17 @@
+[Unit]
+Description=Agent autopilot: browser panel (chat with the planner, plan, status)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/agent-autopilot
+ExecStart=/usr/bin/node /root/agent-autopilot/web/server.mjs
+Environment=HOME=/root
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/root/.config/agent-autopilot.env
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

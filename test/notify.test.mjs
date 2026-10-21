@@ -94,3 +94,14 @@ test('every button command is understood by parseCommand', () => {
     for (const b of buttonsFor(k)) assert.notEqual(parseCommand(b.command), null, b.command);
   }
 });
+
+test('notify adds click=<webPublicUrl> so a tap opens the panel, and nothing without it', async () => {
+  const n = await fakeNtfy();
+  await notify({ ntfyServer: n.url, ntfyTopic: 't', webPublicUrl: 'https://h.example/pult/' }, { title: 't', message: 'm' });
+  await notify({ ntfyServer: n.url, ntfyTopic: 't' }, { title: 't', message: 'm' });
+  await notify({ ntfyServer: n.url, ntfyTopic: 't', webPublicUrl: '' }, { title: 't', message: 'm' });
+  n.close();
+  assert.equal(n.got[0].params.click, 'https://h.example/pult/');
+  assert.equal(n.got[1].params.click, undefined);
+  assert.equal(n.got[2].params.click, undefined);
+});
