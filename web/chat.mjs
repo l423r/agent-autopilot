@@ -52,24 +52,25 @@ export function createChat({
     append('error', INTERRUPTED);
   }
 
-  async function send(text, onEvent) {
+  // `extra` goes to the planner after the text but not into history.
+  async function send(text, onEvent, { extra } = {}) {
     if (running) throw new Error('busy');
     running = true;
     stopped = false;
     try {
-      await answer(text, onEvent);
+      await answer(text, onEvent, extra);
     } finally {
       running = false;
     }
   }
 
-  async function answer(text, onEvent) {
+  async function answer(text, onEvent, extra) {
     const emit = event => { try { onEvent(event); } catch { /* listener gone; the answer is still saved */ } };
     append('user', text);
 
     const sessionId = readSession();
     const args = [
-      '-p', text,
+      '-p', extra ? `${text}\n\n${extra}` : text,
       '--output-format', 'stream-json', '--verbose',
       '--permission-mode', 'dontAsk',
       '--settings', join(cfg.autopilotDir, 'claude-settings.json'),

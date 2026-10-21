@@ -64,7 +64,7 @@
   .md pre code { background: none; padding: 0; white-space: pre; word-break: normal; overflow-wrap: normal; }
   .md a { color: var(--accent2); }
 
-  .composer { display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+  .composer { position: relative; display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
   .composer textarea { flex: 1; min-width: 0; resize: none; max-height: 40vh; min-height: 44px; padding: 10px 12px;
     border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
   .composer textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
@@ -73,6 +73,15 @@
   .btn.stop { background: var(--bad); }
   .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
   .hidden { display: none !important; }
+
+  .mentions { position: absolute; left: 10px; right: 10px; bottom: 100%; margin-bottom: 6px; z-index: 5; max-height: 40vh; overflow-y: auto;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 8px 24px #0008; }
+  .mentions button { display: block; width: 100%; min-height: 44px; padding: 0 12px; text-align: left; border: none; background: none;
+    border-radius: 8px; color: var(--text); font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mentions button:active, .mentions button.on { background: var(--line); }
+  .mentions small { color: var(--muted); margin-left: 8px; }
+  .mention { color: var(--accent2); font-weight: 600; }
+  .msg.user .mention { color: #fff; background: #ffffff2e; border-radius: 5px; padding: 0 3px; }
 
   .menu { position: absolute; right: 10px; top: 58px; z-index: 10; background: var(--panel2); border: 1px solid var(--line);
     border-radius: 12px; padding: 6px; box-shadow: 0 8px 24px #0008; }
@@ -138,6 +147,7 @@
       <div class="typing" id="typing">Планировщик думает…</div>
     </div>
     <form class="composer" id="composer">
+      <div class="mentions hidden" id="mentions"></div>
       <textarea id="input" rows="1" placeholder="Сообщение планировщику" maxlength="20000"></textarea>
       <button class="btn" id="send-btn" type="submit">Отправить</button>
       <button class="btn stop hidden" id="stop-btn" type="button">Стоп</button>
@@ -242,8 +252,23 @@ function bubble(role, text, at) {
   const n = el('div', `msg ${role}`);
   if (at) n.dataset.at = at;
   if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(text); }
+  else if (role === 'user') n.append(...withMentions(text));
   else n.textContent = text;
   return n;
+}
+
+// `@name` at the start or after a space (not in an email address) is shown in the accent colour.
+const MENTION = /(^|\s)(@[^\s@.,:;!?]+)(?=$|[\s.,:;!?])/g;
+function withMentions(text) {
+  const nodes = [];
+  let last = 0;
+  for (const m of text.matchAll(MENTION)) {
+    const at = m.index + m[1].length;
+    nodes.push(document.createTextNode(text.slice(last, at)), el('span', 'mention', m[2]));
+    last = at + m[2].length;
+  }
+  nodes.push(document.createTextNode(text.slice(last)));
+  return nodes;
 }
 
 function renderHistory(entries) {
@@ -328,11 +353,56 @@ function autosize() {
 }
 input.addEventListener('input', autosize);
 
+/* ---------- @project picker ---------- */
+const mentionBox = $('mentions');
+let projectList = null; // loaded on the first `@`
+
+// The `@query` right before the caret, if it starts a word.
+function mentionQuery() {
+  const m = input.value.slice(0, input.selectionStart).match(/(^|\s)@([^\s@]*)$/);
+  return m ? m[2] : null;
+}
+
+async function updateMentions() {
+  const query = mentionQuery();
+  if (query === null) return mentionBox.classList.add('hidden');
+  if (!projectList) {
+    try { projectList = await api('api/projects'); } catch { projectList = null; return mentionBox.classList.add('hidden'); }
+    if (mentionQuery() !== query) return updateMentions();
+  }
+  const q = query.toLowerCase();
+  const found = projectList.filter(p => p.name.toLowerCase().includes(q));
+  mentionBox.replaceChildren(...found.map(p => {
+    const b = el('button', null, `@${p.name}`);
+    b.type = 'button';
+    b.append(el('small', null, p.active ? 'в работе' : p.projectDir));
+    b.addEventListener('pointerdown', ev => ev.preventDefault()); // keep the keyboard open
+    b.addEventListener('click', () => insertMention(p.name));
+    return b;
+  }));
+  mentionBox.classList.toggle('hidden', !found.length);
+}
+
+function insertMention(name) {
+  const caret = input.selectionStart;
+  const before = input.value.slice(0, caret).replace(/@[^\s@]*$/, `@${name} `);
+  input.value = before + input.value.slice(caret).replace(/^[^\s]*\s?/, '');
+  input.setSelectionRange(before.length, before.length);
+  input.focus();
+  mentionBox.classList.add('hidden');
+  autosize();
+}
+
+input.addEventListener('input', updateMentions);
+input.addEventListener('click', updateMentions);
+input.addEventListener('blur', () => mentionBox.classList.add('hidden'));
+
 $('composer').addEventListener('submit', async ev => {
   ev.preventDefault();
   const text = input.value.trim();
   if (!text || busy) return;
   $('send-btn').disabled = true;
+  mentionBox.classList.add('hidden');
   try {
     await api('api/chat', { text });
     input.value = '';

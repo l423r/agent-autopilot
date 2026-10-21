@@ -113,6 +113,22 @@ try {
   }
   await shot('chat-answer');
 
+  // `@` opens the project picker above the field; a tap inserts `@name `, the sent message highlights it.
+  await page.fill('#input', '');
+  await page.type('#input', 'Что с @pro');
+  await page.waitForSelector('#mentions:not(.hidden) button');
+  await shot('chat-mention');
+  await page.click('#mentions button');
+  const typed = await page.inputValue('#input');
+  if (typed !== 'Что с @project ') fail(`после выбора проекта в поле «${typed}»`);
+  if (await page.isVisible('#mentions')) fail('список проектов не закрылся после выбора');
+  await page.type('#input', 'и a@mail.ru?');
+  await page.click('#send-btn');
+  await page.waitForSelector('#send-btn:not(.hidden)', { timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 2, null, { timeout: 15_000 });
+  const marks = await page.evaluate(() => [...document.querySelectorAll('.msg.user')].at(-1).querySelectorAll('.mention').length);
+  if (marks !== 1) fail(`в сообщении подсвечено упоминаний: ${marks}, нужно 1`);
+
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
   await shot('plan-projects');

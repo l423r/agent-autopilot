@@ -236,6 +236,30 @@ test('GET /api/projects: все проекты, активный со стату
   assert.equal(beta.currentPlan, 'plans/other.md');
 });
 
+test('POST /api/chat с @проектом: Claude получает служебный блок, в истории — текст без него', async () => {
+  withProjects({ active: ALPHA_B, status: 'idle' });
+  const argvFile = join(root, 'argv.json');
+  process.env.FAKE_ARGV = argvFile;
+  await start();
+  assert.equal((await post('/api/chat', { text: 'что с @beta и @beta?' })).status, 202);
+  await idle();
+  const argv = JSON.parse(readFileSync(argvFile, 'utf8'));
+  const prompt = argv[argv.indexOf('-p') + 1];
+  assert.equal(prompt, `что с @beta и @beta?\n\n[Проекты из сообщения]\n- @beta: projectDir=${join(FIX, 'beta')}, план=plans/other.md, прогресс=plans/other.progress.md, автопилот: не активен`);
+  const h = await json(await get('/api/history'));
+  assert.equal(h.entries[0].text, 'что с @beta и @beta?');
+});
+
+test('POST /api/chat без упоминаний: промпт — ровно текст', async () => {
+  const argvFile = join(root, 'argv.json');
+  process.env.FAKE_ARGV = argvFile;
+  await start();
+  await post('/api/chat', { text: 'почта a@x.ru' });
+  await idle();
+  const argv = JSON.parse(readFileSync(argvFile, 'utf8'));
+  assert.equal(argv[argv.indexOf('-p') + 1], 'почта a@x.ru');
+});
+
 test('GET /api/projects без projects в конфиге → один активный проект', async () => {
   await start();
   const list = await json(await get('/api/projects'));

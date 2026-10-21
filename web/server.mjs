@@ -10,7 +10,7 @@ import { parsePlan } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
 import { killOrphan } from '../lib/runner.mjs';
-import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch } from '../lib/projects.mjs';
+import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, mentionContext } from '../lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_TEXT = 20_000;
@@ -63,10 +63,12 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       if (!text || text.length > MAX_TEXT) return sendJson(res, 400, { error: `Нужен текст до ${MAX_TEXT} символов` });
       if (chat.busy()) return sendJson(res, 409, { error: 'Планировщик ещё отвечает' });
       pending = '';
+      const active = effectiveConfig(cfg);
+      const extra = mentionContext(text, listProjects(active), { ...active, status: loadState(cfg.stateDir).status });
       const done = chat.send(text, event => {
         if (event.type === 'delta') pending += event.text;
         broadcast(event);
-      });
+      }, { extra });
       broadcast({ type: 'busy', busy: true, text: '' });
       done.catch(() => {}).finally(() => {
         pending = '';

@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   listProjects, progressPathFor, listPlans, findPlan, effectiveConfig, requestSwitch, takeSwitch, applySwitch,
+  mentionContext,
 } from '../lib/projects.mjs';
 import { loadState, saveState } from '../lib/state.mjs';
 
@@ -115,4 +116,28 @@ test('applySwitch пишет active.json и сбрасывает состоян�
   assert.ok(!Number.isNaN(Date.parse(s.updatedAt)));
   assert.deepEqual(readdirSync(dir).sort(), ['active.json', 'state.json']);
   assert.equal(effectiveConfig({ stateDir: dir, projectDir: ALPHA, planPath: 'a.md' }).planPath, 'plans/other.md');
+});
+
+const ACTIVE = { projectDir: ALPHA, planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md', status: 'running' };
+
+test('mentionContext: два проекта в одном сообщении → две строки', () => {
+  const projects = listProjects(cfgWithProjects('/nonexistent'));
+  assert.equal(mentionContext('глянь @alpha и @beta, пожалуйста', projects, ACTIVE), [
+    '[Проекты из сообщения]',
+    `- @alpha: projectDir=${ALPHA}, план=plans/2026-02-b.md, прогресс=plans/journal.md, автопилот: активен (running)`,
+    `- @beta: projectDir=${BETA}, план=plans/other.md, прогресс=plans/other.progress.md, автопилот: не активен`,
+  ].join('\n'));
+});
+
+test('mentionContext: одно имя дважды → одна строка; знаки препинания после имени', () => {
+  const projects = listProjects(cfgWithProjects('/nonexistent'));
+  const block = mentionContext('@beta: план готов? Запусти @beta!', projects, ACTIVE);
+  assert.equal(block.split('\n').length, 2);
+  assert.match(block, /^- @beta: /m);
+});
+
+test('mentionContext: адрес почты, неизвестное имя, имя-префикс → null', () => {
+  const projects = listProjects(cfgWithProjects('/nonexistent'));
+  assert.equal(mentionContext('пиши на a@beta.ru или @nope, @alphabet', projects, ACTIVE), null);
+  assert.equal(mentionContext('без упоминаний', projects, ACTIVE), null);
 });
