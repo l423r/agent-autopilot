@@ -266,20 +266,34 @@ async function daemon(mode, { preState, since } = {}) {
   mkdirSync(join(root, 'state'), { recursive: true });
   if (preState) writeFileSync(join(root, 'state', 'state.json'), JSON.stringify(preState));
   if (since) writeFileSync(join(root, 'state', 'commands.since'), since + '\n');
-  const child = spawn('node', [cli, 'run'], {
-    env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: mode, FAKE_PLAN: join(root, 'plan.md') },
-    stdio: 'ignore',
-  });
-  const exited = new Promise(r => child.on('exit', r));
-  return {
-    root, n, child,
+  const d = {
+    root, n,
     replies: () => n.got.filter(g => g.path === '/tp'),
+    // A crash (SIGKILL, no graceful shutdown) without closing the fake ntfy, then a fresh
+    // daemon on the same project and state.
+    async restart() {
+      await kill('SIGKILL');
+      start();
+    },
     async stop() {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-      await exited;
+      await kill();
       n.close();
     },
   };
+  let exited;
+  const start = () => {
+    d.child = spawn('node', [cli, 'run'], {
+      env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: mode, FAKE_PLAN: join(root, 'plan.md') },
+      stdio: 'ignore',
+    });
+    exited = new Promise(r => d.child.on('exit', r));
+  };
+  const kill = async (signal = 'SIGTERM') => {
+    if (d.child.exitCode === null && d.child.signalCode === null) d.child.kill(signal);
+    await exited;
+  };
+  start();
+  return d;
 }
 const planText = root => readFileSync(join(root, 'plan.md'), 'utf8');
 const halted = { status: 'halted', currentTask: 'Task 2', attempts: { 'Task 2': 3 }, nextAttemptAt: null, reason: 'Task 2 не удалась 3 раз подряд' };
@@ -355,6 +369,51 @@ test('commands: a restart does not replay a command already handled', async () =
     assert.equal(state(d.root).status, 'halted');
     assert.equal(d.replies().length, 0);
     assert.match(planText(d.root), /- \[ \]/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('commands: CLI resume wakes a daemon waiting in a stopped state', async () => {
+  const d = await daemon('tick', { preState: halted });
+  try {
+    await waitFor(() => d.n.subs.length > 0);
+    await new Promise(r => setTimeout(r, 500));
+    assert.equal(state(d.root).status, 'halted');
+    await exec(d.root, ['resume']);
+    await waitFor(() => state(d.root).status === 'done', 8000);
+    assert.doesNotMatch(planText(d.root), /- \[ \]/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('commands: resume during an iteration cancels an earlier pause', async () => {
+  const d = await daemon('slow');
+  try {
+    await waitFor(() => d.n.subs.length > 0 && state(d.root).status === 'running');
+    d.n.publish('пауза');
+    await waitFor(() => d.replies().some(r => /после текущей задачи/i.test(r.body)), 1500);
+    d.n.publish('продолжить');
+    await waitFor(() => d.replies().some(r => /Пауза отменена/.test(r.body)), 1500);
+    await waitFor(() => state(d.root).status === 'done');
+    assert.doesNotMatch(planText(d.root), /- \[ \]/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('commands: a pause acknowledged during an iteration survives a daemon restart', async () => {
+  const d = await daemon('slow');
+  try {
+    await waitFor(() => d.n.subs.length > 0 && state(d.root).status === 'running');
+    d.n.publish('пауза');
+    await waitFor(() => d.replies().some(r => /после текущей задачи/i.test(r.body)), 1500);
+    await d.restart();
+    await waitFor(() => state(d.root).status === 'paused', 5000);
+    await new Promise(r => setTimeout(r, 2500));
+    assert.equal(state(d.root).status, 'paused');
+    assert.match(planText(d.root), /### Task 3: three\n- \[ \]/);
   } finally {
     await d.stop();
   }

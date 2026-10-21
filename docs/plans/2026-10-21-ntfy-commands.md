@@ -143,10 +143,10 @@
 
 ### Task 6: Ревью кода
 
-- [ ] **Step 1:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD. Передать этот план с Global Constraints и Review Focus (каждую строку проверить отдельно) и журнал прогресса.
-- [ ] **Step 2:** Critical и Important — исправить за один проход, каждое через TDD (тест, воспроизводящий находку, сначала падает). Minor — в журнал строками `minor (отложено): …`; несогласие с находкой — `Решение: … — почему — цена ошибки`.
-- [ ] **Step 3:** `npm test` → PASS; `node scripts/live-check.mjs` → OK; итог ревью в журнал
-- [ ] **Step 4: Commit** — `git commit -m "fix(autopilot): review findings for phone commands"`
+- [x] **Step 1:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD. Передать этот план с Global Constraints и Review Focus (каждую строку проверить отдельно) и журнал прогресса.
+- [x] **Step 2:** Critical и Important — исправить за один проход, каждое через TDD (тест, воспроизводящий находку, сначала падает). Minor — в журнал строками `minor (отложено): …`; несогласие с находкой — `Решение: … — почему — цена ошибки`.
+- [x] **Step 3:** `npm test` → PASS; `node scripts/live-check.mjs` → OK; итог ревью в журнал
+- [x] **Step 4: Commit** — `git commit -m "fix(autopilot): review findings for phone commands"`
 
 ### Task 7: [manual] Включение и проверка с телефона
 

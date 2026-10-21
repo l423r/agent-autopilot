@@ -59,6 +59,14 @@ test('resume while busy changes nothing', () => {
   const r = applyCommand('resume', { ...idle, status: 'running', currentTask: 'Task 2' }, { ...ctx, busy: true });
   assert.equal(r.state, null);
   assert.match(r.reply.message, /уже работаю/);
+  assert.ok(!r.cancelPause);
+});
+
+test('resume while busy cancels a pending pause', () => {
+  const r = applyCommand('resume', { ...idle, status: 'running', currentTask: 'Task 2' }, { ...ctx, busy: true, pausePending: true });
+  assert.equal(r.state, null);
+  assert.equal(r.cancelPause, true);
+  assert.match(r.reply.message, /Пауза отменена/);
 });
 
 test('status replies with the summary', () => {

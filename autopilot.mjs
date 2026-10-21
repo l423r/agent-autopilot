@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Autopilot CLI: run | once | status | resume
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -21,8 +21,16 @@ const COMMAND_TICK_MS = 1000;
 
 // Phone commands (ntfyCommands). The listener only queues commands and answers right away when
 // nothing can change (status, unknown words, anything while busy); state.json is written by the
-// main loop alone, between iterations. `pause` during an iteration sets pauseAfterTask.
+// main loop alone, between iterations. `pause` during an iteration sets pauseAfterTask, mirrored
+// in state/pause-after-task so that an acknowledged pause survives a crash of the daemon.
 const commands = { enabled: false, queue: [], busy: false, pauseAfterTask: false };
+
+const pauseFile = cfg => join(cfg.stateDir, 'pause-after-task');
+function setPauseAfterTask(cfg, on) {
+  commands.pauseAfterTask = on;
+  if (on) writeFileSync(pauseFile(cfg), new Date().toISOString() + '\n');
+  else rmSync(pauseFile(cfg), { force: true });
+}
 
 function loadConfig() {
   const path = process.env.AUTOPILOT_CONFIG ?? join(HERE, 'config.json');
@@ -104,8 +112,8 @@ async function step(cfg) {
   let next = applyResult(state, d.task, result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result, planAfter, finishedAt, cfg);
   const pauseNow = commands.pauseAfterTask && !STOPPED.includes(next.status);
   if (pauseNow) next = { ...next, status: 'paused', nextAttemptAt: null, reason: 'Пауза по команде с телефона' };
-  commands.pauseAfterTask = false;
   saveState(cfg.stateDir, next);
+  setPauseAfterTask(cfg, false);
   commands.busy = false;
   logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
   const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
@@ -164,8 +172,9 @@ async function onCommand(cfg, { message }) {
     commands.queue.push(cmd);
     return;
   }
-  const r = applyCommand(cmd, loadState(cfg.stateDir), { busy: commands.busy, summary: summary(cfg) });
-  if (r.pauseAfterTask) commands.pauseAfterTask = true;
+  const r = applyCommand(cmd, loadState(cfg.stateDir), { busy: commands.busy, summary: summary(cfg), pausePending: commands.pauseAfterTask });
+  if (r.pauseAfterTask) setPauseAfterTask(cfg, true);
+  if (r.cancelPause) setPauseAfterTask(cfg, false);
   await reply(cfg, r.reply);
 }
 
@@ -179,15 +188,20 @@ async function drainCommands(cfg) {
       saveState(cfg.stateDir, { ...r.state, updatedAt: new Date().toISOString() });
       logEvent(cfg, `${cmd} по команде (было: ${s.status})`);
     }
+    setPauseAfterTask(cfg, false);
     await reply(cfg, r.reply);
   }
 }
 
 // Sleeps until `until` (ms timestamp, Infinity = no deadline); with commands on, in steps
-// of at most a second, returning early as soon as a command is queued.
-async function waitUntil(until) {
+// of at most a second, returning early as soon as a command is queued or the status in
+// state.json changes (e.g. `autopilot.mjs resume` from the shell).
+async function waitUntil(cfg, until) {
+  const statusNow = () => { try { return loadState(cfg.stateDir).status; } catch { return null; } };
+  const from = statusNow();
   for (;;) {
     if (commands.queue.length) return;
+    if (commands.enabled && statusNow() !== from) return;
     const left = until - Date.now();
     if (left <= 0) return;
     const chunk = commands.enabled ? COMMAND_TICK_MS : MAX_SLEEP_CHUNK_MS;
@@ -207,13 +221,17 @@ async function runLoop(cfg, once) {
       log: s => logEvent(cfg, s),
     });
     logEvent(cfg, `команды с телефона: слушаю ${cfg.ntfyTopic}-cmd`);
+    if (existsSync(pauseFile(cfg))) {
+      commands.queue.push('pause');
+      logEvent(cfg, 'пауза по команде, принятая до перезапуска');
+    }
   }
   for (;;) {
     await drainCommands(cfg);
     const r = await step(cfg);
     if (r === 'stop') {
       if (!commands.enabled) return;
-      await waitUntil(Infinity);
+      await waitUntil(cfg, Infinity);
       continue;
     }
     if (r !== 'continue') {
@@ -221,7 +239,7 @@ async function runLoop(cfg, once) {
         console.log(`Следующая попытка: ${r.sleepUntil.toISOString()}`);
         return;
       }
-      await waitUntil(Math.max(r.sleepUntil.getTime(), Date.now() + 1000));
+      await waitUntil(cfg, Math.max(r.sleepUntil.getTime(), Date.now() + 1000));
       continue;
     }
     if (once) return;
