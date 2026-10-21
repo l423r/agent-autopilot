@@ -6,16 +6,18 @@ import { notify, stopMessage } from '../lib/notify.mjs';
 // A local stand-in for ntfy that records every POST.
 export async function fakeNtfy() {
   const got = [];
+  const auth = [];
   const server = createServer((req, res) => {
     let body = '';
     req.on('data', d => (body += d)).on('end', () => {
       const url = new URL(req.url, 'http://x');
       got.push({ method: req.method, path: url.pathname, params: Object.fromEntries(url.searchParams), body });
+      auth.push(req.headers.authorization);
       res.end('{}');
     });
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${server.address().port}`, got, close: () => server.close() };
+  return { url: `http://127.0.0.1:${server.address().port}`, got, auth, close: () => server.close() };
 }
 
 test('notify posts the message to <server>/<topic> with title, tags and priority as params', async () => {
@@ -42,4 +44,12 @@ test('stopMessage describes each stop status', () => {
   assert.match(stopMessage('halted', 'Task 5 не удалась 3 раз подряд').title, /застрял/i);
   assert.match(stopMessage('auth', 'r').title, /вход/i);
   assert.match(stopMessage('paused', 'Этап завершён').title, /пауза/i);
+});
+
+test('notify sends ntfyToken as a Bearer token', async () => {
+  const n = await fakeNtfy();
+  await notify({ ntfyServer: n.url, ntfyTopic: 't', ntfyToken: 'tk_abc' }, { title: 't', message: 'm' });
+  await notify({ ntfyServer: n.url, ntfyTopic: 't' }, { title: 't', message: 'm' });
+  n.close();
+  assert.deepEqual(n.auth, ['Bearer tk_abc', undefined]);
 });
