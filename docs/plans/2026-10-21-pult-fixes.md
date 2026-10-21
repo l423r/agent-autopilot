@@ -50,8 +50,8 @@
 
 **Files:** Modify `web/planner-prompt.md`, `README.md`
 
-- [ ] **Step 1:** `planner-prompt.md`: «Не включай в планы шаг `git push`: автопилот пушит сам после каждой задачи (`pushAfterTask`), а исполнителю пуш запрещён — такой шаг останавливает автопилот». README, раздел требований к плану — то же одной строкой.
-- [ ] **Step 2: Commit** — `docs: plans must not contain git push steps`
+- [x] **Step 1:** `planner-prompt.md`: «Не включай в планы шаг `git push`: автопилот пушит сам после каждой задачи (`pushAfterTask`), а исполнителю пуш запрещён — такой шаг останавливает автопилот». README, раздел требований к плану — то же одной строкой.
+- [x] **Step 2: Commit** — `docs: plans must not contain git push steps`
 
 ### Task 4: Проверка результата
 

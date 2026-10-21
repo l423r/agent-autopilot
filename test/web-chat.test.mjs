@@ -238,3 +238,11 @@ test('прерванный ответ отмечается при создани
   assert.equal(chat.history()[1].text, 'Ответ прерван перезапуском пульта.');
   assert.deepEqual(roles(make()), ['user', 'error']);
 });
+
+test('правила: в планах нет шага git push (planner-prompt и README)', () => {
+  const prompt = readFileSync(promptFile, 'utf8');
+  assert.match(prompt, /Не включай в планы шаг `git push`.*`pushAfterTask`.*останавливает автопилот/);
+  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  const req = readme.slice(readme.indexOf('## Требования к плану'), readme.indexOf('## Команды'));
+  assert.match(req, /`git push`.*`pushAfterTask`/);
+});
