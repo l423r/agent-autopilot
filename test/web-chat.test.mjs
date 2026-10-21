@@ -9,6 +9,7 @@ import { createChat } from '../web/chat.mjs';
 const fake = fileURLToPath(new URL('./fixtures/fake-claude-stream.mjs', import.meta.url));
 chmodSync(fake, 0o755);
 const promptFile = fileURLToPath(new URL('../web/planner-prompt.md', import.meta.url));
+const ANSWER = 'Привет.\n\nЭто планировщик.\n\nЧем помочь?';
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 let root, dir, argvFile;
@@ -35,14 +36,26 @@ test('ok: three deltas then done, history and session saved', async () => {
   const chat = make();
   const events = await sendCollect(chat, 'привет');
   assert.deepEqual(events.map(e => e.type), ['delta', 'delta', 'delta', 'done']);
-  assert.equal(events.slice(0, 3).map(e => e.text).join(''), 'Привет, это планировщик.');
-  assert.equal(events[3].text, 'Привет, это планировщик.');
+  assert.equal(events.slice(0, 3).map(e => e.text).join(''), ANSWER);
+  assert.equal(events[3].text, ANSWER);
   assert.deepEqual(roles(chat), ['user', 'assistant']);
   assert.equal(chat.history()[0].text, 'привет');
-  assert.equal(chat.history()[1].text, 'Привет, это планировщик.');
+  assert.equal(chat.history()[1].text, ANSWER);
   assert.ok(chat.history()[0].at);
   assert.match(session().sessionId, /^sess-\d+$/);
   assert.equal(chat.busy(), false);
+});
+
+test('separate assistant messages (text around tool calls) are split by a blank line, so markdown survives', async () => {
+  process.env.FAKE_PARTS = JSON.stringify(['Сейчас посмотрю план.', '## Итог\n- готово']);
+  try {
+    const events = await sendCollect(make(), 'что в плане?');
+    const want = 'Сейчас посмотрю план.\n\n## Итог\n- готово';
+    assert.equal(events.filter(e => e.type === 'delta').map(e => e.text).join(''), want);
+    assert.equal(events.at(-1).text, want);
+  } finally {
+    delete process.env.FAKE_PARTS;
+  }
 });
 
 test('history survives a new chat instance (read from history.jsonl)', async () => {
@@ -89,7 +102,7 @@ test('answer is saved even if the listener throws (client gone)', async () => {
   const chat = make();
   await chat.send('долго', () => { throw new Error('socket closed'); });
   assert.deepEqual(roles(chat), ['user', 'assistant']);
-  assert.equal(chat.history()[1].text, 'Привет, это планировщик.');
+  assert.equal(chat.history()[1].text, ANSWER);
 });
 
 test('stop during slow kills the process and records "остановлено"', async () => {

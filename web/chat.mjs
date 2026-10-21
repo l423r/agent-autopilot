@@ -71,8 +71,10 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
         initSeen = true;
         writeFileSync(sessionFile, JSON.stringify({ sessionId: msg.session_id }));
       } else if (msg.type === 'assistant') {
-        const delta = (msg.message?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('');
+        // Each assistant message is a whole turn (text before and after tool calls): keep them apart.
+        let delta = (msg.message?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('');
         if (delta) {
+          if (answer) delta = '\n\n' + delta;
           answer += delta;
           emit({ type: 'delta', text: delta });
         }

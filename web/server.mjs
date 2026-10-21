@@ -117,7 +117,8 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
   };
 
   const server = createServer(async (req, res) => {
-    const path = new URL(req.url, 'http://x').pathname;
+    let path;
+    try { path = new URL(req.url, 'http://x').pathname; } catch { return sendJson(res, 400, { error: 'Неверный адрес' }); }
     const route = routes[`${req.method} ${path}`];
     if (!route) return sendJson(res, 404, { error: 'Не найдено' });
     try {

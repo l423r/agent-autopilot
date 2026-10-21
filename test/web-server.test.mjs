@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import { startServer } from '../web/server.mjs';
 import { pidRecord } from '../lib/pidfile.mjs';
 
 const fake = fileURLToPath(new URL('./fixtures/fake-claude-stream.mjs', import.meta.url));
 chmodSync(fake, 0o755);
 const samplePlan = fileURLToPath(new URL('./fixtures/plan-sample.md', import.meta.url));
+const ANSWER = 'Привет.\n\nЭто планировщик.\n\nЧем помочь?';
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -129,8 +131,8 @@ test('chat: 202, SSE delivers deltas and done, history has the answer', async ()
   const got = await events;
   assert.equal(got[0].type, 'busy');
   const deltas = got.filter(e => e.type === 'delta').map(e => e.text).join('');
-  assert.equal(deltas, 'Привет, это планировщик.');
-  assert.equal(got.find(e => e.type === 'done').text, 'Привет, это планировщик.');
+  assert.equal(deltas, ANSWER);
+  assert.equal(got.find(e => e.type === 'done').text, ANSWER);
   await idle();
   const h = await json(await get('/api/history'));
   assert.equal(h.busy, false);
@@ -161,7 +163,7 @@ test('client disconnecting mid-answer does not lose the answer', async () => {
   await idle();
   const h = await json(await get('/api/history'));
   assert.equal(h.entries.at(-1).role, 'assistant');
-  assert.equal(h.entries.at(-1).text, 'Привет, это планировщик.');
+  assert.equal(h.entries.at(-1).text, ANSWER);
 });
 
 test('reconnecting during an answer gets busy state and the text so far', async () => {
@@ -174,7 +176,7 @@ test('reconnecting during an answer gets busy state and the text so far', async 
   assert.equal(got[0].busy, true);
   assert.ok(got[0].text.startsWith('Привет'), got[0].text);
   const rest = got.filter(e => e.type === 'delta').map(e => e.text).join('');
-  assert.equal(got[0].text + rest, 'Привет, это планировщик.');
+  assert.equal(got[0].text + rest, ANSWER);
   await idle();
 });
 
@@ -268,4 +270,17 @@ test('the real panel page: three tabs, relative markdown.mjs, no absolute /api p
   assert.match(html, /<link rel="icon" href="data:/);
   // parsePlan's phase is already "Этап N": prefixing it again shows "Этап Этап 1".
   assert.doesNotMatch(html, /`Этап \$\{/);
+});
+
+test('a malformed request URL gets 400 and does not bring the server down', async () => {
+  await start();
+  const reply = await new Promise((ok, fail) => {
+    const sock = connect(srv.port, '127.0.0.1', () => sock.write('GET //[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'));
+    let data = '';
+    sock.on('data', c => { data += c; });
+    sock.on('end', () => ok(data));
+    sock.on('error', fail);
+  });
+  assert.match(reply, /^HTTP\/1\.1 400/);
+  assert.equal((await get('/api/history')).status, 200);
 });
