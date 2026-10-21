@@ -101,11 +101,11 @@
 **Interfaces:**
 - Produces: `notify(cfg, { …, actions?: Array<{label, command}> })` — параметр `actions` формата ntfy: `http, <label>, <server>/<topic>-cmd, method=POST, body=<command>, headers.Authorization=Bearer <ntfyCommandToken>; …`; без `ntfyCommandToken` или `ntfyCommands` кнопок нет. `buttonsFor(kind: 'done'|'waiting-user'|'halted'|'auth'|'paused'|'limit'|'task'): Array<{label, command}>` — done → [Статус]; waiting-user, halted → [Продолжить, Статус]; auth, paused → [Продолжить]; limit → [Продолжить сейчас]; task → [Пауза].
 
-- [ ] **Step 1: Тесты:** `notify` с actions отправляет параметр `actions` с двумя кнопками в формате выше; без `ntfyCommandToken` параметра нет; `buttonsFor('halted')` — ровно [Продолжить→resume, Статус→status]; ни у одного вида больше 3 кнопок.
-- [ ] **Step 2:** `npm test` → FAIL
-- [ ] **Step 3:** Реализовать; в `autopilot.mjs` передать `buttonsFor(...)` во все места отправки уведомлений.
-- [ ] **Step 4:** `npm test` → PASS все
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): action buttons in notifications"`
+- [x] **Step 1: Тесты:** `notify` с actions отправляет параметр `actions` с двумя кнопками в формате выше; без `ntfyCommandToken` параметра нет; `buttonsFor('halted')` — ровно [Продолжить→resume, Статус→status]; ни у одного вида больше 3 кнопок.
+- [x] **Step 2:** `npm test` → FAIL
+- [x] **Step 3:** Реализовать; в `autopilot.mjs` передать `buttonsFor(...)` во все места отправки уведомлений.
+- [x] **Step 4:** `npm test` → PASS все
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): action buttons in notifications"`
 
 ### Task 4: Команды в демоне
 

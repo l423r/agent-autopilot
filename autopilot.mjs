@@ -10,7 +10,7 @@ import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
-import { notify, stopMessage } from './lib/notify.mjs';
+import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -67,7 +67,7 @@ async function step(cfg) {
     if (state.status !== d.status || state.reason !== d.reason) {
       saveState(cfg.stateDir, { ...state, status: d.status, reason: d.reason, updatedAt: now.toISOString() });
       // A status set by applyResult (auth, paused) was already announced when it was saved.
-      if (state.status !== d.status) await send(cfg, stopMessage(d.status, withProgress(cfg, d.reason)));
+      if (state.status !== d.status) await send(cfg, { ...stopMessage(d.status, withProgress(cfg, d.reason)), actions: buttonsFor(d.status) });
     }
     logEvent(cfg, `${d.status}: ${d.reason}`);
     return 'stop';
@@ -98,13 +98,13 @@ async function step(cfg) {
   const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
   if (cfg.pushAfterTask && finished) pushProject(cfg, d.task);
   if (finished && cfg.notifyEachTask) {
-    await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, d.task.title), tags: 'heavy_check_mark', priority: 2 });
+    await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, d.task.title), tags: 'heavy_check_mark', priority: 2, actions: buttonsFor('task') });
   }
   if (next.status === 'sleeping' && result.kind === 'limit') {
     const at = new Date(next.nextAttemptAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    await send(cfg, { title: 'Автопилот: лимит Claude', message: `Продолжу ${at} (${d.task.id})`, tags: 'hourglass', priority: 3 });
+    await send(cfg, { title: 'Автопилот: лимит Claude', message: `Продолжу ${at} (${d.task.id})`, tags: 'hourglass', priority: 3, actions: buttonsFor('limit') });
   }
-  if (STOPPED.includes(next.status)) await send(cfg, stopMessage(next.status, withProgress(cfg, next.reason)));
+  if (STOPPED.includes(next.status)) await send(cfg, { ...stopMessage(next.status, withProgress(cfg, next.reason)), actions: buttonsFor(next.status) });
   return 'continue';
 }
 
