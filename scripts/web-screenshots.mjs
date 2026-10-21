@@ -114,11 +114,15 @@ try {
   await shot('chat-answer');
 
   await page.click('nav.tabs button[data-tab="plan"]');
-  await page.waitForSelector('#plan-tasks .task');
+  await page.waitForSelector('#projects .project.active .card-head');
+  await shot('plan-projects');
+  await page.click('#projects .project.active .card-head');
+  await page.waitForSelector('#projects .plan .task');
   await shot('plan');
   const bar = await page.evaluate(() => {
-    const [done, total] = document.getElementById('plan-progress').textContent.match(/\d+/g).map(Number);
-    const ratio = document.getElementById('plan-bar').offsetWidth / document.querySelector('.bar').clientWidth;
+    const head = document.querySelector('#projects .project.active .card-head');
+    const [done, total] = head.querySelector('.meta').textContent.match(/выполнено (\d+) из (\d+)/).slice(1).map(Number);
+    const ratio = head.querySelector('.bar > div').offsetWidth / head.querySelector('.bar').clientWidth;
     return { want: done / total, got: ratio };
   });
   if (Math.abs(bar.want - bar.got) > 0.02) fail(`полоса прогресса ${bar.got.toFixed(2)} вместо ${bar.want.toFixed(2)}`);
@@ -126,9 +130,9 @@ try {
     fail('во вкладке «План» есть undefined/NaN');
   }
 
-  const target = await page.$('#plan-tasks .task:not(.done) > button') ?? await page.$('#plan-tasks .task > button');
+  const target = await page.$('#projects .plan .task:not(.done) > button') ?? await page.$('#projects .plan .task > button');
   await target.click();
-  await page.waitForSelector('#plan-tasks .task.open .body:not(.hidden)');
+  await page.waitForSelector('#projects .plan .task.open .body:not(.hidden)');
   await target.evaluate(n => n.scrollIntoView({ block: 'start' }));
   await shot('plan-task-open');
 

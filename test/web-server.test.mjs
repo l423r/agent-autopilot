@@ -207,6 +207,98 @@ test('GET /api/plan returns markdown and task counts', async () => {
   for (const t of p.tasks) assert.ok(Number.isInteger(t.boxes) && Number.isInteger(t.checked), `${t.id} has step counts`);
 });
 
+const FIX = fileURLToPath(new URL('./fixtures/projects', import.meta.url));
+function withProjects({ active, status } = {}) {
+  cfg.projects = [
+    { name: 'alpha', projectDir: join(FIX, 'alpha'), plansDir: 'plans', progressPath: 'plans/journal.md' },
+    { name: 'beta', projectDir: join(FIX, 'beta'), plansDir: 'plans' },
+  ];
+  mkdirSync(cfg.stateDir, { recursive: true });
+  if (active) writeFileSync(join(cfg.stateDir, 'active.json'), JSON.stringify(active));
+  if (status) writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status, reason: '' }));
+}
+const ALPHA_B = { projectDir: join(FIX, 'alpha'), planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md' };
+
+test('GET /api/projects: все проекты, активный со статусом и текущим планом', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  await start();
+  const list = await json(await get('/api/projects'));
+  assert.deepEqual(list.map(p => p.name), ['alpha', 'beta']);
+  const [alpha, beta] = list;
+  assert.equal(alpha.active, true);
+  assert.equal(alpha.status, 'running');
+  assert.equal(alpha.projectDir, join(FIX, 'alpha'));
+  assert.equal(alpha.currentPlan, 'plans/2026-02-b.md');
+  assert.deepEqual(alpha.plans.map(p => p.planPath), ['plans/2026-03-empty.md', 'plans/2026-02-b.md', 'plans/2026-01-a.md']);
+  assert.deepEqual(alpha.plans[1], { planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md', done: 1, total: 3, finished: false });
+  assert.equal(beta.active, false);
+  assert.equal(beta.status, null);
+  assert.equal(beta.currentPlan, 'plans/other.md');
+});
+
+test('GET /api/projects без projects в конфиге → один активный проект', async () => {
+  await start();
+  const list = await json(await get('/api/projects'));
+  assert.equal(list.length, 1);
+  assert.equal(list[0].active, true);
+  assert.equal(list[0].currentPlan, 'plan.md');
+  assert.equal(list[0].status, 'idle');
+});
+
+test('GET /api/plan: активный план из active.json, план по проекту, чужие пути → 404', async () => {
+  withProjects({ active: ALPHA_B });
+  await start();
+  let p = await json(await get('/api/plan'));
+  assert.equal(p.path, join(FIX, 'alpha', 'plans', '2026-02-b.md'));
+  assert.equal(p.done, 1);
+  assert.equal(p.total, 3);
+  p = await json(await get(`/api/plan?project=beta&plan=${encodeURIComponent('plans/other.md')}`));
+  assert.equal(p.path, join(FIX, 'beta', 'plans', 'other.md'));
+  assert.equal(p.total, 1);
+  for (const q of [
+    `project=alpha&plan=${encodeURIComponent('../../etc/passwd')}`,
+    `project=alpha&plan=${encodeURIComponent(join(FIX, 'alpha', 'plans', '2026-01-a.md'))}`,
+    `project=alpha&plan=${encodeURIComponent('plans/other.md')}`,
+    `project=alpha&plan=${encodeURIComponent('plans/journal.md')}`,
+    `project=nope&plan=${encodeURIComponent('plans/other.md')}`,
+    'project=alpha',
+  ]) assert.equal((await get(`/api/plan?${q}`)).status, 404, q);
+});
+
+test('GET /api/status читает active.json', async () => {
+  withProjects({ active: ALPHA_B, status: 'paused' });
+  await start();
+  const s = await json(await get('/api/status'));
+  assert.match(s.text, /Прогресс: 1\/3/);
+});
+
+test('POST /api/switch: после задачи при running, сразу иначе; 409 на выполненный, 404 на чужой путь', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  await start();
+  let r = await post('/api/switch', { project: 'beta', plan: 'plans/other.md' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await json(r), { ok: true, when: 'after-task' });
+  const req = JSON.parse(readFileSync(join(cfg.stateDir, 'switch.json'), 'utf8'));
+  assert.deepEqual(req, { projectDir: join(FIX, 'beta'), planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' });
+
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'done' }));
+  r = await post('/api/switch', { project: 'alpha', plan: 'plans/2026-03-empty.md' });
+  assert.deepEqual(await json(r), { ok: true, when: 'now' });
+  assert.equal(JSON.parse(readFileSync(join(cfg.stateDir, 'switch.json'), 'utf8')).planPath, 'plans/2026-03-empty.md');
+
+  r = await post('/api/switch', { project: 'alpha', plan: 'plans/2026-01-a.md' });
+  assert.equal(r.status, 409);
+  assert.equal((await json(r)).error, 'План уже выполнен');
+  for (const body of [
+    { project: 'alpha', plan: '../../etc/passwd' },
+    { project: 'alpha', plan: join(FIX, 'beta', 'plans', 'other.md') },
+    { project: 'alpha', plan: 'plans/other.md' },
+    { project: 'nope', plan: 'plans/other.md' },
+    { project: 1, plan: null },
+  ]) assert.equal((await post('/api/switch', body)).status, 404, JSON.stringify(body));
+  assert.equal(JSON.parse(readFileSync(join(cfg.stateDir, 'switch.json'), 'utf8')).planPath, 'plans/2026-03-empty.md');
+});
+
 test('GET /api/status returns statusText and state', async () => {
   mkdirSync(cfg.stateDir, { recursive: true });
   writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'paused', reason: 'Пауза по команде с телефона' }));

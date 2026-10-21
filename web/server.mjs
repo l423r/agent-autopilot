@@ -10,6 +10,7 @@ import { parsePlan } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
 import { killOrphan } from '../lib/runner.mjs';
+import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch } from '../lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_TEXT = 20_000;
@@ -32,9 +33,22 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     for (const res of clients) res.write(frame);
   };
 
-  const readPlanText = () => {
-    const path = resolve(cfg.projectDir, cfg.planPath);
+  // The daemon may switch plans at any time: read active.json on every request.
+  const readPlanText = (projectDir, planPath) => {
+    if (!projectDir) ({ projectDir, planPath } = effectiveConfig(cfg));
+    const path = resolve(projectDir, planPath);
     return { path, markdown: readFileSync(path, 'utf8') };
+  };
+
+  const projects = () => {
+    const active = effectiveConfig(cfg);
+    const state = loadState(cfg.stateDir);
+    return listProjects(active).map(project => {
+      const plans = listPlans(project);
+      const isActive = resolve(project.projectDir) === resolve(active.projectDir);
+      const currentPlan = isActive ? active.planPath : (plans.find(p => !p.finished) ?? plans[0])?.planPath ?? null;
+      return { name: project.name, projectDir: project.projectDir, active: isActive, status: isActive ? state.status : null, currentPlan, plans };
+    });
   };
 
   const routes = {
@@ -82,8 +96,18 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       sendJson(res, 200, { ok: true });
     },
 
+    'GET /api/projects': (req, res) => sendJson(res, 200, projects()),
+
     'GET /api/plan': (req, res) => {
-      const { path, markdown } = readPlanText();
+      const query = new URL(req.url, 'http://x').searchParams;
+      let target = [];
+      if (query.has('project') || query.has('plan')) {
+        // Only plans listed for a known project: no path from the request reaches the disk.
+        const found = findPlan(effectiveConfig(cfg), query.get('project'), query.get('plan'));
+        if (!found) return sendJson(res, 404, { error: 'План не найден' });
+        target = [found.project.projectDir, found.plan.planPath];
+      }
+      const { path, markdown } = readPlanText(...target);
       const { tasks } = parsePlan(markdown);
       sendJson(res, 200, { path, markdown, tasks, done: tasks.filter(t => t.done).length, total: tasks.length });
     },
@@ -93,6 +117,15 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       let plan;
       try { plan = parsePlan(readPlanText().markdown); } catch { plan = { tasks: [] }; }
       sendJson(res, 200, { text: statusText(state, plan), state });
+    },
+
+    'POST /api/switch': async (req, res) => {
+      const body = await readJson(req);
+      const found = findPlan(effectiveConfig(cfg), body?.project, body?.plan);
+      if (!found) return sendJson(res, 404, { error: 'План не найден' });
+      if (found.plan.finished) return sendJson(res, 409, { error: 'План уже выполнен' });
+      requestSwitch(cfg.stateDir, { projectDir: found.project.projectDir, planPath: found.plan.planPath, progressPath: found.plan.progressPath });
+      sendJson(res, 200, { ok: true, when: loadState(cfg.stateDir).status === 'running' ? 'after-task' : 'now' });
     },
 
     'POST /api/command': async (req, res) => {

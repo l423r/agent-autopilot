@@ -96,6 +96,20 @@
   .task .title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .task .meta { font-size: 13px; color: var(--muted); }
   .task .body { padding: 0 12px 12px; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+  .projects { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .project { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .project.active { border-color: var(--accent); }
+  .card-head { display: block; width: 100%; min-height: 48px; padding: 12px; border: none; background: none; text-align: left; }
+  .card-head .row { display: flex; align-items: center; gap: 8px; }
+  .card-head .pname { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .badge { flex: none; font-size: 13px; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: #fff; }
+  .project .meta, .plan .meta { font-size: 13px; color: var(--muted); margin: 4px 0 6px; overflow-wrap: anywhere; }
+  .project .details { padding: 0 10px 12px; }
+  .plan { border-top: 1px solid var(--line); padding: 8px 0; }
+  .plan-row { display: flex; align-items: center; gap: 8px; }
+  .plan-toggle { flex: 1; min-width: 0; min-height: 44px; padding: 0; border: none; background: none; text-align: left; overflow-wrap: anywhere; }
+  .plan .tasks { margin-top: 8px; }
+  .bar.small { height: 6px; }
   .phase { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
 
   /* Status */
@@ -133,12 +147,11 @@
   <section id="tab-plan">
     <div class="scroll">
       <div class="plan-head">
-        <div class="name" id="plan-name">…</div>
+        <div class="name">Проекты</div>
         <button class="btn ghost" id="plan-refresh" type="button">Обновить</button>
       </div>
-      <div class="bar"><div id="plan-bar"></div></div>
-      <div class="progress-label" id="plan-progress"></div>
-      <ul class="tasks" id="plan-tasks"></ul>
+      <div class="note hidden" id="switch-note"></div>
+      <ul class="projects" id="projects"></ul>
     </div>
   </section>
 
@@ -381,43 +394,154 @@ function taskBodies(markdown) {
   return bodies;
 }
 
-async function loadPlan() {
-  const list = $('plan-tasks');
-  try {
-    const p = await api('api/plan');
-    $('plan-name').textContent = p.path.split('/').pop();
-    $('plan-name').title = p.path;
-    $('plan-bar').style.width = p.total ? `${(100 * p.done) / p.total}%` : '0';
-    $('plan-progress').textContent = `Выполнено ${p.done} из ${p.total}`;
-    const bodies = taskBodies(p.markdown);
-    const open = new Set([...list.querySelectorAll('.task.open')].map(n => n.dataset.id));
-    list.replaceChildren();
-    let phase;
-    for (const t of p.tasks) {
-      if (t.phase && t.phase !== phase) { phase = t.phase; list.append(el('li', 'phase', phase)); }
-      const li = el('li', `task${t.done ? ' done' : ''}`);
-      li.dataset.id = t.id;
-      const head = el('button');
-      head.type = 'button';
-      head.append(el('span', 'box', t.done ? '✓' : ''));
-      const title = el('span', 'title', `${t.id}: ${t.title}`);
-      title.append(el('div', 'meta', `${t.checked}/${t.boxes} шагов${t.manual ? ' · вручную' : ''}`));
-      head.append(title);
-      const body = el('div', 'body md hidden');
-      head.addEventListener('click', () => {
-        const opening = body.classList.contains('hidden');
-        if (opening && !body.childElementCount) body.innerHTML = renderMarkdown(bodies.get(t.id) || '(нет текста)');
-        body.classList.toggle('hidden', !opening);
-        li.classList.toggle('open', opening);
-      });
-      li.append(head, body);
-      list.append(li);
-      if (open.has(t.id)) head.click();
+// Fills `list` with the plan's tasks; tasks whose ids are in `open` start expanded.
+function renderTasks(list, p, open) {
+  const bodies = taskBodies(p.markdown);
+  list.replaceChildren();
+  let phase;
+  for (const t of p.tasks) {
+    if (t.phase && t.phase !== phase) { phase = t.phase; list.append(el('li', 'phase', phase)); }
+    const li = el('li', `task${t.done ? ' done' : ''}`);
+    li.dataset.id = t.id;
+    const head = el('button');
+    head.type = 'button';
+    head.append(el('span', 'box', t.done ? '✓' : ''));
+    const title = el('span', 'title', `${t.id}: ${t.title}`);
+    title.append(el('div', 'meta', `${t.checked}/${t.boxes} шагов${t.manual ? ' · вручную' : ''}`));
+    head.append(title);
+    const body = el('div', 'body md hidden');
+    head.addEventListener('click', () => {
+      const opening = body.classList.contains('hidden');
+      if (opening && !body.childElementCount) body.innerHTML = renderMarkdown(bodies.get(t.id) || '(нет текста)');
+      body.classList.toggle('hidden', !opening);
+      li.classList.toggle('open', opening);
+    });
+    li.append(head, body);
+    list.append(li);
+    if (open.has(t.id)) head.click();
+  }
+  if (!p.tasks.length) list.append(el('li', 'empty', 'В плане нет задач.'));
+}
+
+const PROJECT_STATUS = { running: 'работает', paused: 'пауза', 'waiting-user': 'ждёт тебя', done: 'готово', halted: 'застрял',
+  sleeping: 'лимит', idle: 'ожидает', auth: 'нужен вход' };
+const fileName = path => path.split('/').pop();
+const progressBar = (done, total, cls = 'bar') => {
+  const bar = el('div', cls);
+  const fill = el('div');
+  fill.style.width = total ? `${(100 * done) / total}%` : '0';
+  bar.append(fill);
+  return bar;
+};
+const openProjects = new Set();
+const openPlans = new Set(); // `${project}\n${planPath}`
+const autoOpened = new Set(); // projects whose current plan was expanded once
+let openTasks = new Map(); // plan key -> ids of expanded tasks, kept across refreshes
+
+function planBlock(project, info, isCurrent) {
+  const key = `${project.name}\n${info.planPath}`;
+  const block = el('div', 'plan');
+  const row = el('div', 'plan-row');
+  const toggle = el('button', 'plan-toggle', `${fileName(info.planPath)}${isCurrent ? ' · текущий' : ''}`);
+  toggle.type = 'button';
+  toggle.title = info.planPath;
+  toggle.append(el('div', 'meta', info.finished ? `Выполнен: ${info.done} из ${info.total}` : `Выполнено ${info.done} из ${info.total}`),
+    progressBar(info.done, info.total, 'bar small'));
+  row.append(toggle);
+  // The autopilot is already on the active project's current plan.
+  if (!info.finished && !(project.active && isCurrent)) {
+    const run = el('button', 'btn', 'Запустить');
+    run.type = 'button';
+    run.addEventListener('click', () => switchTo(project, info, run));
+    row.append(run);
+  }
+  const tasks = el('ul', 'tasks hidden');
+  tasks.dataset.key = key;
+  const show = async opening => {
+    tasks.classList.toggle('hidden', !opening);
+    if (opening) openPlans.add(key); else openPlans.delete(key);
+    if (!opening || tasks.childElementCount) return;
+    tasks.append(el('li', 'meta', 'Загружаю…'));
+    try {
+      const q = `project=${encodeURIComponent(project.name)}&plan=${encodeURIComponent(info.planPath)}`;
+      renderTasks(tasks, await api(`api/plan?${q}`), openTasks.get(key) ?? new Set());
+    } catch (err) {
+      tasks.replaceChildren(el('li', 'note bad', err.message));
     }
-    if (!p.tasks.length) list.append(el('li', 'empty', 'В плане нет задач.'));
+  };
+  toggle.addEventListener('click', () => show(tasks.classList.contains('hidden')));
+  block.append(row, tasks);
+  if (openPlans.has(key)) show(true);
+  return block;
+}
+
+function projectCard(project) {
+  const li = el('li', `project${project.active ? ' active' : ''}`);
+  const head = el('button', 'card-head');
+  head.type = 'button';
+  const row = el('div', 'row');
+  row.append(el('span', 'pname', project.name));
+  if (project.active) row.append(el('span', 'badge', `в работе · ${PROJECT_STATUS[project.status] || project.status || 'нет данных'}`));
+  const current = project.plans.find(p => p.planPath === project.currentPlan);
+  head.append(row, el('div', 'meta', current
+    ? `${fileName(current.planPath)} — выполнено ${current.done} из ${current.total}`
+    : (project.currentPlan ? fileName(project.currentPlan) : 'Планов нет')));
+  if (current) head.append(progressBar(current.done, current.total));
+  const details = el('div', 'details hidden');
+  head.addEventListener('click', () => {
+    const opening = details.classList.contains('hidden');
+    details.classList.toggle('hidden', !opening);
+    if (!opening) return openProjects.delete(project.name);
+    openProjects.add(project.name);
+    if (details.childElementCount) return;
+    // The first opening of a card shows the current plan's tasks right away.
+    if (current && !autoOpened.has(project.name)) {
+      autoOpened.add(project.name);
+      openPlans.add(`${project.name}\n${current.planPath}`);
+    }
+    const others = project.plans.filter(p => p !== current);
+    if (current) details.append(planBlock(project, current, true));
+    if (others.length) details.append(el('div', 'phase', 'Другие планы'));
+    for (const info of others) details.append(planBlock(project, info, false));
+    if (!project.plans.length) details.append(el('div', 'meta', 'В папке планов нет файлов .md.'));
+  });
+  li.append(head, details);
+  if (openProjects.has(project.name)) head.click();
+  return li;
+}
+
+async function loadPlan() {
+  const list = $('projects');
+  openTasks = new Map();
+  for (const ul of list.querySelectorAll('ul.tasks[data-key]')) {
+    openTasks.set(ul.dataset.key, new Set([...ul.querySelectorAll('.task.open')].map(n => n.dataset.id)));
+  }
+  try {
+    const projects = await api('api/projects');
+    list.replaceChildren(...projects.map(projectCard));
+    if (!projects.length) list.append(el('li', 'empty', 'Проектов нет.'));
   } catch (err) {
-    $('plan-name').textContent = 'План не загружен';
-    list.replaceChildren(el('li', 'note bad', err.message));
+    list.replaceChildren(el('li', 'note bad', `Проекты не загружены: ${err.message}`));
+  }
+}
+
+async function switchTo(project, info, btn) {
+  const target = `${project.name} / ${fileName(info.planPath)}`;
+  if (!confirm(`Переключить автопилот на ${target}?`)) return;
+  const note = $('switch-note');
+  note.className = 'note';
+  note.textContent = 'Отправляю…';
+  btn.disabled = true;
+  try {
+    const r = await api('api/switch', { project: project.name, plan: info.planPath });
+    note.className = 'note ok';
+    note.textContent = r.when === 'now' ? `✓ Переключено: ${target}` : `✓ Переключится после текущей задачи: ${target}`;
+    setTimeout(() => { loadPlan(); loadStatus(); }, 3000);
+  } catch (err) {
+    note.className = 'note bad';
+    note.textContent = `✗ Не удалось: ${err.message}`;
+  } finally {
+    btn.disabled = false;
   }
 }
 $('plan-refresh').addEventListener('click', loadPlan);
