@@ -177,3 +177,50 @@ test('reset clears history and session', async () => {
   await sendCollect(chat, 'снова');
   assert.equal(argv().includes('--resume'), false);
 });
+
+test('send: исключение до запуска снимает занятость', async () => {
+  const chat = createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake, promptFile: join(root, 'no-such-prompt.md') });
+  await assert.rejects(chat.send('привет', () => {}));
+  assert.equal(chat.busy(), false);
+  await assert.rejects(chat.send('ещё', () => {}), err => err.message !== 'busy');
+  assert.equal(chat.busy(), false);
+});
+
+test('stop: таймер SIGKILL снимается после выхода', async () => {
+  process.env.FAKE_STREAM = 'termlate';
+  const signals = [];
+  const kill = (pid, signal) => { signals.push(signal); process.kill(pid, signal); };
+  const chat = createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake, killGraceMs: 300, kill });
+  const p = chat.send('долго', () => {});
+  await new Promise(r => setTimeout(r, 300));
+  chat.stop();
+  await p;
+  await new Promise(r => setTimeout(r, 500));
+  assert.ok(signals.includes('SIGTERM'));
+  assert.equal(signals.includes('SIGKILL'), false);
+});
+
+test('stop после готового result не выбрасывает ответ', async () => {
+  process.env.FAKE_STREAM = 'linger';
+  const chat = make();
+  let gotDelta;
+  const delta = new Promise(r => { gotDelta = r; });
+  const p = chat.send('привет', e => { if (e.type === 'delta') gotDelta(); });
+  await delta;
+  await new Promise(r => setTimeout(r, 300));
+  chat.stop();
+  await p;
+  assert.deepEqual(roles(chat), ['user', 'assistant']);
+  assert.equal(chat.history()[1].text, ANSWER);
+});
+
+test('прерванный ответ отмечается при создании чата', async () => {
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'history.jsonl'), JSON.stringify({ role: 'user', text: 'привет', at: 'x' }) + '\n');
+  writeFileSync(join(dir, 'child.pid'), '999999999 dead-boot 1');
+  const chat = make();
+  assert.deepEqual(roles(chat), ['user', 'error']);
+  assert.equal(chat.history()[1].text, 'Ответ прерван перезапуском пульта.');
+  assert.deepEqual(roles(make()), ['user', 'error']);
+});

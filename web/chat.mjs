@@ -4,14 +4,19 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pidRecord } from '../lib/pidfile.mjs';
+import { pidRecord, livePid } from '../lib/pidfile.mjs';
 
 const HISTORY_LIMIT = 500;
 const KILL_GRACE_MS = 10_000;
 const STDERR_TAIL = 2000;
 const PROMPT_FILE = fileURLToPath(new URL('./planner-prompt.md', import.meta.url));
 
-export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE ?? 'claude' }) {
+const INTERRUPTED = 'Ответ прерван перезапуском пульта.';
+
+export function createChat({
+  cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE ?? 'claude',
+  promptFile = PROMPT_FILE, killGraceMs = KILL_GRACE_MS, kill = process.kill.bind(process),
+}) {
   mkdirSync(dir, { recursive: true });
   const historyFile = join(dir, 'history.jsonl');
   const sessionFile = join(dir, 'session.json');
@@ -19,6 +24,7 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
   let child = null;
   let running = false;
   let stopped = false;
+  let killTimer = null;
 
   const readSession = () => {
     try { return JSON.parse(readFileSync(sessionFile, 'utf8')).sessionId ?? null; } catch { return null; }
@@ -40,10 +46,24 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
     }
   }
 
+  // The previous server died mid-answer: its question is the last entry and nobody will answer it.
+  if (history().at(-1)?.role === 'user' && livePid(pidFile) === null) {
+    rmSync(pidFile, { force: true });
+    append('error', INTERRUPTED);
+  }
+
   async function send(text, onEvent) {
     if (running) throw new Error('busy');
     running = true;
     stopped = false;
+    try {
+      await answer(text, onEvent);
+    } finally {
+      running = false;
+    }
+  }
+
+  async function answer(text, onEvent) {
     const emit = event => { try { onEvent(event); } catch { /* listener gone; the answer is still saved */ } };
     append('user', text);
 
@@ -53,11 +73,11 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
       '--output-format', 'stream-json', '--verbose',
       '--permission-mode', 'dontAsk',
       '--settings', join(cfg.autopilotDir, 'claude-settings.json'),
-      '--append-system-prompt', readFileSync(PROMPT_FILE, 'utf8'),
+      '--append-system-prompt', readFileSync(promptFile, 'utf8'),
     ];
     if (sessionId) args.push('--resume', sessionId);
 
-    let answer = '';
+    let reply = '';
     let result = null;
     let initSeen = false;
     let stderr = '';
@@ -74,8 +94,8 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
         // Each assistant message is a whole turn (text before and after tool calls): keep them apart.
         let delta = (msg.message?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('');
         if (delta) {
-          if (answer) delta = '\n\n' + delta;
-          answer += delta;
+          if (reply) delta = '\n\n' + delta;
+          reply += delta;
           emit({ type: 'delta', text: delta });
         }
       } else if (msg.type === 'result') {
@@ -102,13 +122,15 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
       child.on('close', () => { if (buffered) onLine(buffered); resolve(); });
     });
 
+    clearTimeout(killTimer);
+    killTimer = null;
     child = null;
     rmSync(pidFile, { force: true });
     let error = null;
-    if (stopped) {
+    if (stopped && !result) {
       error = 'Остановлено кнопкой «Стоп».';
     } else if (result && !result.is_error) {
-      const full = answer || String(result.result ?? '');
+      const full = reply || String(result.result ?? '');
       append('assistant', full);
       emit({ type: 'done', text: full });
     } else if (result?.is_error) {
@@ -125,15 +147,16 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
       append('error', error);
       emit({ type: 'error', text: error });
     }
-    running = false;
   }
 
   function stop() {
     if (!child?.pid) return;
     stopped = true;
     const pid = child.pid;
-    killGroup(pid, 'SIGTERM');
-    setTimeout(() => killGroup(pid, 'SIGKILL'), KILL_GRACE_MS).unref();
+    killGroup(kill, pid, 'SIGTERM');
+    clearTimeout(killTimer);
+    killTimer = setTimeout(() => killGroup(kill, pid, 'SIGKILL'), killGraceMs);
+    killTimer.unref();
   }
 
   function reset() {
@@ -145,10 +168,10 @@ export function createChat({ cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE 
   return { busy: () => running, history, send, stop, reset };
 }
 
-function killGroup(pid, signal) {
+function killGroup(kill, pid, signal) {
   try {
-    process.kill(-pid, signal);
+    kill(-pid, signal);
   } catch {
-    try { process.kill(pid, signal); } catch { /* already gone */ }
+    try { kill(pid, signal); } catch { /* already gone */ }
   }
 }

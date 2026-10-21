@@ -23,9 +23,18 @@ if (mode === 'limit') {
   emit({ type: 'result', subtype: 'success', is_error: true, result: 'Claude usage limit reached ∙ resets 3pm', session_id: sessionId });
   process.exit(1);
 }
+if (mode === 'termlate') {
+  // Hangs until SIGTERM, then takes 100 ms to exit on its own.
+  process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100));
+  text('Думаю…');
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
+}
 const parts = process.env.FAKE_PARTS ? JSON.parse(process.env.FAKE_PARTS) : ['Привет.', 'Это планировщик.', 'Чем помочь?'];
 for (const p of parts) {
   if (mode === 'slow') await sleep(300);
   text(p);
 }
 emit({ type: 'result', subtype: 'success', is_error: false, result: parts.at(-1), session_id: sessionId });
+// 'linger': the answer is complete, but the process takes a while to exit (a «Стоп» can land in between).
+if (mode === 'linger') await sleep(2000);
