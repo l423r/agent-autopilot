@@ -13,6 +13,7 @@ import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
+import { effectiveConfig, takeSwitch, applySwitch, listProjects, progressPathFor } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -38,7 +39,7 @@ function loadConfig() {
   cfg.autopilotDir ??= HERE;
   cfg.stateDir ??= join(cfg.autopilotDir, 'state');
   cfg.logDir ??= join(cfg.autopilotDir, 'logs');
-  return cfg;
+  return effectiveConfig(cfg);
 }
 
 const readPlan = cfg => parsePlan(readFileSync(resolve(cfg.projectDir, cfg.planPath), 'utf8'));
@@ -193,14 +194,31 @@ async function drainCommands(cfg) {
   }
 }
 
+// A plan switch requested by the panel (<stateDir>/switch.json). Taken only here, between
+// iterations, so a running task always finishes on the plan it started on.
+async function applyPendingSwitch(cfg) {
+  const t = takeSwitch(cfg.stateDir);
+  if (!t) return;
+  const project = listProjects(cfg).find(p => resolve(p.projectDir) === resolve(t.projectDir));
+  const target = { projectDir: t.projectDir, planPath: t.planPath, progressPath: t.progressPath ?? progressPathFor(project ?? {}, t.planPath) };
+  const was = basename(cfg.planPath);
+  applySwitch(cfg.stateDir, target);
+  Object.assign(cfg, target);
+  setPauseAfterTask(cfg, false);
+  const label = `${project?.name ?? basename(target.projectDir)} / ${basename(target.planPath)}`;
+  logEvent(cfg, `Переключено: ${label} (было: ${was})`);
+  await send(cfg, { title: 'Автопилот: другой план', message: withProgress(cfg, `Переключено: ${label}`), tags: 'twisted_rightwards_arrows', priority: 3 });
+}
+
 // Sleeps until `until` (ms timestamp, Infinity = no deadline); with commands on, in steps
 // of at most a second, returning early as soon as a command is queued or the status in
-// state.json changes (e.g. `autopilot.mjs resume` from the shell).
+// state.json changes (e.g. `autopilot.mjs resume` from the shell) or a plan switch is requested.
 async function waitUntil(cfg, until) {
   const statusNow = () => { try { return loadState(cfg.stateDir).status; } catch { return null; } };
   const from = statusNow();
   for (;;) {
     if (commands.queue.length) return;
+    if (existsSync(join(cfg.stateDir, 'switch.json'))) return;
     if (commands.enabled && statusNow() !== from) return;
     const left = until - Date.now();
     if (left <= 0) return;
@@ -227,6 +245,7 @@ async function runLoop(cfg, once) {
     }
   }
   for (;;) {
+    await applyPendingSwitch(cfg);
     await drainCommands(cfg);
     const r = await step(cfg);
     if (r === 'stop') {

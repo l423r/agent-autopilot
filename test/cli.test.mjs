@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pidRecord } from '../lib/pidfile.mjs';
+import { requestSwitch } from '../lib/projects.mjs';
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL('../autopilot.mjs', import.meta.url));
@@ -258,7 +259,7 @@ const waitFor = async (cond, ms = 15_000) => {
 };
 
 // A daemon with ntfyCommands on, running as a separate process; stop() sends SIGTERM.
-async function daemon(mode, { preState, since } = {}) {
+async function daemon(mode, { preState, since, fakePlan } = {}) {
   const { spawn } = await import('node:child_process');
   const n = await fakeNtfyCmd();
   const { root, cfg } = setup();
@@ -283,7 +284,7 @@ async function daemon(mode, { preState, since } = {}) {
   let exited;
   const start = () => {
     d.child = spawn('node', [cli, 'run'], {
-      env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: mode, FAKE_PLAN: join(root, 'plan.md') },
+      env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: mode, FAKE_PLAN: fakePlan ?? join(root, 'plan.md') },
       stdio: 'ignore',
     });
     exited = new Promise(r => d.child.on('exit', r));
@@ -414,6 +415,61 @@ test('commands: a pause acknowledged during an iteration survives a daemon resta
     await new Promise(r => setTimeout(r, 2500));
     assert.equal(state(d.root).status, 'paused');
     assert.match(planText(d.root), /### Task 3: three\n- \[ \]/);
+  } finally {
+    await d.stop();
+  }
+});
+
+// --- Switching plans (active.json, switch.json) ---
+
+const PLAN_B = `## Этап 1. B
+### Task 1: b-one
+- [ ] s
+### Task 2: b-two
+- [ ] s
+`;
+const planB = root => readFileSync(join(root, 'plan2.md'), 'utf8');
+const toB = root => {
+  writeFileSync(join(root, 'plan2.md'), PLAN_B);
+  return { projectDir: root, planPath: 'plan2.md', progressPath: 'plan2.progress.md' };
+};
+const active = root => JSON.parse(readFileSync(join(root, 'state', 'active.json'), 'utf8'));
+
+test('switch: status читает active.json', async () => {
+  const { root } = setup();
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'state', 'active.json'), JSON.stringify(toB(root)));
+  const { stdout } = await exec(root, ['status']);
+  assert.match(stdout, /Прогресс: 0\/2/);
+  assert.match(stdout, /Task 1: b-one/);
+});
+
+test('switch: между задачами — текущая задача A доходит до конца, дальше план B', async () => {
+  const d = await daemon('slow', { fakePlan: '' });
+  try {
+    await waitFor(() => d.n.subs.length > 0 && state(d.root).status === 'running');
+    requestSwitch(join(d.root, 'state'), toB(d.root));
+    await waitFor(() => /### Task 2: b-two\n- \[x\]/.test(planB(d.root)), 20_000);
+    assert.match(planText(d.root), /### Task 2: two\n- \[x\]/);
+    assert.match(planText(d.root), /### Task 3: three\n- \[ \]/);
+    assert.equal(active(d.root).planPath, 'plan2.md');
+    await waitFor(() => state(d.root).status === 'done');
+    assert.match(readFileSync(join(d.root, 'logs', 'autopilot.log'), 'utf8'), /Переключено/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('switch: из остановленного состояния демон сразу начинает план B', async () => {
+  const d = await daemon('tick', { fakePlan: '', preState: { status: 'done', currentTask: null, attempts: {}, nextAttemptAt: null, reason: 'План выполнен' } });
+  try {
+    await waitFor(() => d.n.subs.length > 0);
+    await new Promise(r => setTimeout(r, 500));
+    assert.equal(state(d.root).status, 'done');
+    requestSwitch(join(d.root, 'state'), toB(d.root));
+    await waitFor(() => /### Task 1: b-one\n- \[x\]/.test(planB(d.root)), 2500);
+    assert.match(planText(d.root), /### Task 2: two\n- \[ \]/);
+    assert.ok(d.replies().some(r => /Переключено: .+ \/ plan2\.md/.test(r.body)), d.replies().map(r => r.body).join(' | '));
   } finally {
     await d.stop();
   }

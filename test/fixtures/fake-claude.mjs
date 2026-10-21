@@ -15,15 +15,19 @@ if (mode === 'ok') {
   result(true, 'Claude usage limit reached ∙ resets 3pm');
   process.exitCode = 1;
 } else if (mode === 'tick') {
-  // Tick every box of the first unfinished task in FAKE_PLAN, like a successful real run.
+  // Tick every box of the first unfinished task in FAKE_PLAN (empty: the plan named in the
+  // prompt, relative to cwd), like a successful real run.
   const { readFileSync, writeFileSync } = await import('node:fs');
-  const lines = readFileSync(process.env.FAKE_PLAN, 'utf8').split('\n');
+  const { resolve } = await import('node:path');
+  const prompt = process.argv[process.argv.indexOf('-p') + 1] ?? '';
+  const planFile = process.env.FAKE_PLAN || resolve(prompt.match(/план `([^`]+)`/)[1]);
+  const lines = readFileSync(planFile, 'utf8').split('\n');
   const first = lines.findIndex(l => l.startsWith('- [ ]'));
   if (first !== -1) {
     let start = first;
     while (start > 0 && !lines[start].startsWith('### ')) start--;
     for (let i = start + 1; i < lines.length && !lines[i].startsWith('#'); i++) lines[i] = lines[i].replace('- [ ]', '- [x]');
-    writeFileSync(process.env.FAKE_PLAN, lines.join('\n'));
+    writeFileSync(planFile, lines.join('\n'));
   }
   result(false, 'ticked');
 } else if (mode === 'killparent') {
