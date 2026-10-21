@@ -1,0 +1,252 @@
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { startServer } from '../web/server.mjs';
+import { pidRecord } from '../lib/pidfile.mjs';
+
+const fake = fileURLToPath(new URL('./fixtures/fake-claude-stream.mjs', import.meta.url));
+chmodSync(fake, 0o755);
+const samplePlan = fileURLToPath(new URL('./fixtures/plan-sample.md', import.meta.url));
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let root, cfg, srv, ntfy, published, base;
+
+beforeEach(async () => {
+  root = mkdtempSync(join(tmpdir(), 'ap-web-'));
+  published = [];
+  ntfy = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      published.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+      res.end('{}');
+    });
+  });
+  await new Promise(r => ntfy.listen(0, '127.0.0.1', r));
+  writeFileSync(join(root, 'index.html'), '<!doctype html><title>Пульт</title>');
+  cfg = {
+    projectDir: root,
+    planPath: 'plan.md',
+    autopilotDir: root,
+    stateDir: join(root, 'state'),
+    ntfyServer: `http://127.0.0.1:${ntfy.address().port}`,
+    ntfyTopic: 'topic',
+    ntfyCommandToken: 'tok-cmd',
+  };
+  writeFileSync(join(root, 'plan.md'), readFileSync(samplePlan, 'utf8'));
+  process.env.FAKE_STREAM = 'ok';
+  delete process.env.FAKE_ARGV;
+});
+
+afterEach(async () => {
+  await srv?.close();
+  srv = null;
+  await new Promise(r => ntfy.close(r));
+});
+
+async function start() {
+  srv = await startServer(cfg, { port: 0, claudeBin: fake, indexFile: join(root, 'index.html') });
+  base = `http://127.0.0.1:${srv.port}`;
+  return srv;
+}
+
+const get = path => fetch(base + path);
+const post = (path, body) => fetch(base + path, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: typeof body === 'string' ? body : JSON.stringify(body ?? {}),
+});
+const json = async res => res.json();
+
+async function waitFor(check, ms = 5000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await sleep(50);
+  }
+  throw new Error('timed out');
+}
+const idle = () => waitFor(async () => !(await json(await get('/api/history'))).busy);
+
+// Reads SSE events from /api/events until `until(events)` is true; then disconnects.
+async function sse(until, ms = 5000) {
+  const ctrl = new AbortController();
+  const res = await fetch(base + '/api/events', { signal: ctrl.signal });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/event-stream/);
+  const events = [];
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    while (!until(events)) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) !== -1) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const type = block.match(/^event: (.*)$/m)?.[1];
+        const data = block.match(/^data: (.*)$/m)?.[1];
+        if (type) events.push({ type, ...JSON.parse(data) });
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    ctrl.abort();
+  }
+  return events;
+}
+
+test('GET / serves index.html, GET /markdown.mjs serves the module', async () => {
+  await start();
+  const page = await get('/');
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+  assert.match(await page.text(), /Пульт/);
+  const md = await get('/markdown.mjs');
+  assert.equal(md.status, 200);
+  assert.match(md.headers.get('content-type'), /text\/javascript/);
+  assert.match(await md.text(), /export function renderMarkdown/);
+  assert.equal((await get('/nope')).status, 404);
+});
+
+test('chat: 202, SSE delivers deltas and done, history has the answer', async () => {
+  await start();
+  process.env.FAKE_STREAM = 'slow';
+  const events = sse(ev => ev.some(e => e.type === 'done'));
+  await sleep(100);
+  const res = await post('/api/chat', { text: 'привет' });
+  assert.equal(res.status, 202);
+  const got = await events;
+  assert.equal(got[0].type, 'busy');
+  const deltas = got.filter(e => e.type === 'delta').map(e => e.text).join('');
+  assert.equal(deltas, 'Привет, это планировщик.');
+  assert.equal(got.find(e => e.type === 'done').text, 'Привет, это планировщик.');
+  await idle();
+  const h = await json(await get('/api/history'));
+  assert.equal(h.busy, false);
+  assert.deepEqual(h.entries.map(e => e.role), ['user', 'assistant']);
+});
+
+test('chat: 400 for empty or too long text or bad json, 409 while busy', async () => {
+  await start();
+  assert.equal((await post('/api/chat', { text: '   ' })).status, 400);
+  assert.equal((await post('/api/chat', {})).status, 400);
+  assert.equal((await post('/api/chat', '{oops')).status, 400);
+  assert.equal((await post('/api/chat', { text: 'x'.repeat(20_001) })).status, 400);
+  process.env.FAKE_STREAM = 'slow';
+  assert.equal((await post('/api/chat', { text: 'x'.repeat(20_000) })).status, 202);
+  assert.equal((await post('/api/chat', { text: 'ещё' })).status, 409);
+  assert.equal((await post('/api/reset')).status, 409);
+  await idle();
+});
+
+test('client disconnecting mid-answer does not lose the answer', async () => {
+  await start();
+  process.env.FAKE_STREAM = 'slow';
+  const events = sse(ev => ev.some(e => e.type === 'delta'));
+  await sleep(100);
+  await post('/api/chat', { text: 'привет' });
+  const got = await events; // disconnected after the first delta
+  assert.ok(!got.some(e => e.type === 'done'));
+  await idle();
+  const h = await json(await get('/api/history'));
+  assert.equal(h.entries.at(-1).role, 'assistant');
+  assert.equal(h.entries.at(-1).text, 'Привет, это планировщик.');
+});
+
+test('reconnecting during an answer gets busy state and the text so far', async () => {
+  await start();
+  process.env.FAKE_STREAM = 'slow';
+  await post('/api/chat', { text: 'привет' });
+  await sleep(750); // two of three slow parts are out
+  const got = await sse(ev => ev.some(e => e.type === 'done'));
+  assert.equal(got[0].type, 'busy');
+  assert.equal(got[0].busy, true);
+  assert.ok(got[0].text.startsWith('Привет'), got[0].text);
+  const rest = got.filter(e => e.type === 'delta').map(e => e.text).join('');
+  assert.equal(got[0].text + rest, 'Привет, это планировщик.');
+  await idle();
+});
+
+test('stop kills the answer; reset clears history', async () => {
+  await start();
+  process.env.FAKE_STREAM = 'slow';
+  await post('/api/chat', { text: 'привет' });
+  await sleep(100);
+  assert.equal((await post('/api/stop')).status, 200);
+  await idle();
+  let h = await json(await get('/api/history'));
+  assert.equal(h.entries.at(-1).role, 'error');
+  assert.match(h.entries.at(-1).text, /Остановлено/);
+  assert.equal((await post('/api/reset')).status, 200);
+  h = await json(await get('/api/history'));
+  assert.deepEqual(h.entries, []);
+});
+
+test('GET /api/plan returns markdown and task counts', async () => {
+  await start();
+  const p = await json(await get('/api/plan'));
+  assert.equal(p.path, join(root, 'plan.md'));
+  assert.equal(p.markdown, readFileSync(samplePlan, 'utf8'));
+  assert.ok(p.total > 0);
+  assert.equal(p.tasks.length, p.total);
+  assert.equal(p.done, p.tasks.filter(t => t.done).length);
+});
+
+test('GET /api/status returns statusText and state', async () => {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'paused', reason: 'Пауза по команде с телефона' }));
+  await start();
+  const s = await json(await get('/api/status'));
+  assert.equal(s.state.status, 'paused');
+  assert.match(s.text, /Статус: paused — Пауза по команде с телефона/);
+  assert.match(s.text, /Прогресс: \d+\/\d+/);
+});
+
+test('POST /api/command publishes пауза/продолжить with the bearer token', async () => {
+  await start();
+  let r = await post('/api/command', { cmd: 'pause' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true });
+  r = await post('/api/command', { cmd: 'resume' });
+  assert.deepEqual(await r.json(), { ok: true });
+  assert.deepEqual(published.map(p => [p.method, p.url, p.auth, p.body]), [
+    ['POST', '/topic-cmd', 'Bearer tok-cmd', 'пауза'],
+    ['POST', '/topic-cmd', 'Bearer tok-cmd', 'продолжить'],
+  ]);
+  assert.equal((await post('/api/command', { cmd: 'rm -rf' })).status, 400);
+  assert.equal(published.length, 2);
+});
+
+test('POST /api/command reports failure when ntfy is not reachable', async () => {
+  cfg.ntfyServer = 'http://127.0.0.1:1';
+  await start();
+  const r = await post('/api/command', { cmd: 'pause' });
+  assert.equal(r.status, 502);
+  assert.equal((await r.json()).ok, false);
+});
+
+test('startup kills an orphaned answer process and is not busy', async () => {
+  const orphan = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { detached: true, stdio: 'ignore' });
+  orphan.unref();
+  await waitFor(() => alive(orphan.pid));
+  mkdirSync(join(cfg.stateDir, 'web'), { recursive: true });
+  writeFileSync(join(cfg.stateDir, 'web', 'child.pid'), pidRecord(orphan.pid));
+  await start();
+  await waitFor(() => !alive(orphan.pid));
+  const h = await json(await get('/api/history'));
+  assert.equal(h.busy, false);
+  process.env.FAKE_STREAM = 'ok';
+  assert.equal((await post('/api/chat', { text: 'привет' })).status, 202);
+  await idle();
+});
