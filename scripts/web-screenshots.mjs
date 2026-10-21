@@ -47,7 +47,7 @@ process.env.FAKE_STREAM = 'slow';
 process.env.FAKE_PARTS = JSON.stringify(ANSWER);
 const cfg = {
   projectDir, planPath: 'plan.md', stateDir, autopilotDir: ROOT,
-  ntfyServer: `http://127.0.0.1:${ntfy.address().port}`, ntfyTopic: 'shots', ntfyCommandToken: 'tk_shots',
+  ntfyServer: `http://127.0.0.1:${ntfy.address().port}`, ntfyTopic: 'shots', ntfyCommandToken: 'tk_shots', ntfyCommands: true,
 };
 const server = await startServer(cfg, { port: 0, claudeBin: join(ROOT, 'test', 'fixtures', 'fake-claude-stream.mjs') });
 const url = `http://127.0.0.1:${server.port}/`;

@@ -76,3 +76,9 @@ test('pathological input renders fast', () => {
   renderMarkdown(src);
   assert.ok(performance.now() - t0 < 200);
 });
+
+test('markdown: код внутри ссылки', () => {
+  const out = renderMarkdown('[`a`](https://x.y)');
+  assert.match(out, /<a href="https:\/\/x\.y"[^>]*><code>a<\/code><\/a>/);
+  assert.ok(!out.includes('\u0000'), JSON.stringify(out));
+});

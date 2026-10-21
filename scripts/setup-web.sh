@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Installs the browser panel: systemd unit + Caddy route /pult/ behind the same
 # password as /term. Run by a person (it opens a new public path). Idempotent.
-# CADDYFILE and SETUP_WEB_CADDY_ONLY=1 (edit the file only) exist for testing.
+# CADDYFILE, CREDS and SETUP_WEB_CADDY_ONLY=1 (edit the file only) exist for testing.
 set -euo pipefail
 
 DIR=/root/agent-autopilot
 CADDYFILE=${CADDYFILE:-/etc/caddy/Caddyfile}
-CREDS=/root/.config/ntfy-credentials
+CREDS=${CREDS:-/root/.config/ntfy-credentials}
 UNIT=agent-autopilot-web.service
+ADDED=0
+
+# The final check logs in with the web terminal password; fail before touching anything without it.
+if [ "${SETUP_WEB_CADDY_ONLY:-}" != 1 ] && ! grep -qs '^terminal ' "$CREDS"; then
+  echo "Не найден пароль веб-терминала: нет строки 'terminal <логин> <пароль>' в $CREDS" >&2
+  exit 1
+fi
 
 if grep -q 'handle_path /pult/\*' "$CADDYFILE"; then
   echo "Caddyfile: /pult/ already present"
@@ -33,12 +40,21 @@ else
     END { if (!done) exit 2 }
   ' "$CADDYFILE" > "$TMP" || { rm -f "$TMP"; echo "no catch-all 'handle {' in $CADDYFILE" >&2; exit 1; }
   cat "$TMP" > "$CADDYFILE"; rm -f "$TMP"
+  ADDED=1
   echo "Caddyfile: /pult/ added (backup: $CADDYFILE.bak-pult)"
 fi
 
 [ "${SETUP_WEB_CADDY_ONLY:-}" = 1 ] && exit 0
 
-caddy validate --config "$CADDYFILE" --adapter caddyfile
+if ! caddy validate --config "$CADDYFILE" --adapter caddyfile; then
+  if [ "$ADDED" = 1 ]; then
+    cp "$CADDYFILE.bak-pult" "$CADDYFILE"
+    echo "caddy validate не прошёл — Caddyfile восстановлен из $CADDYFILE.bak-pult" >&2
+  else
+    echo "caddy validate не прошёл — Caddyfile не менялся, исправьте его вручную" >&2
+  fi
+  exit 1
+fi
 
 install -m 644 "$DIR/systemd/$UNIT" /etc/systemd/system/$UNIT
 systemctl daemon-reload

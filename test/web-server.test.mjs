@@ -40,6 +40,7 @@ beforeEach(async () => {
     ntfyServer: `http://127.0.0.1:${ntfy.address().port}`,
     ntfyTopic: 'topic',
     ntfyCommandToken: 'tok-cmd',
+    ntfyCommands: true,
   };
   writeFileSync(join(root, 'plan.md'), readFileSync(samplePlan, 'utf8'));
   process.env.FAKE_STREAM = 'ok';
@@ -229,6 +230,36 @@ test('POST /api/command publishes пауза/продолжить with the beare
   ]);
   assert.equal((await post('/api/command', { cmd: 'rm -rf' })).status, 400);
   assert.equal(published.length, 2);
+});
+
+test('command: предупреждение при выключенных ntfyCommands', async () => {
+  cfg.ntfyCommands = false;
+  await start();
+  const r = await post('/api/command', { cmd: 'pause' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), {
+    ok: true,
+    warning: 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит',
+  });
+  assert.equal(published.length, 1);
+});
+
+test('history: не больше 1 МБ', async () => {
+  const dir = join(cfg.stateDir, 'web');
+  mkdirSync(dir, { recursive: true });
+  const lines = [];
+  for (let i = 0; i < 500; i++) {
+    lines.push(JSON.stringify({ role: i % 2 ? 'assistant' : 'user', text: `#${i} ` + 'я'.repeat(50 * 1024), at: '2026-10-21T00:00:00.000Z' }));
+  }
+  writeFileSync(join(dir, 'history.jsonl'), lines.join('\n') + '\n');
+  await start();
+  const r = await get('/api/history');
+  const body = Buffer.from(await r.arrayBuffer());
+  assert.ok(body.length < 1_048_576, `${body.length} bytes`);
+  const { entries } = JSON.parse(body.toString('utf8'));
+  assert.ok(entries.length > 0);
+  assert.ok(entries.at(-1).text.startsWith('#499 '));
+  for (const e of entries) assert.equal(e.text.length, `#${e.text.slice(1, e.text.indexOf(' '))} `.length + 50 * 1024);
 });
 
 test('POST /api/command reports failure when ntfy is not reachable', async () => {

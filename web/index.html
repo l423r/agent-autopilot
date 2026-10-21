@@ -104,7 +104,7 @@
   .actions { display: flex; flex-direction: column; gap: 12px; }
   .actions .btn { min-height: 56px; font-size: 18px; }
   .note { margin-top: 14px; min-height: 22px; font-size: 15px; overflow-wrap: anywhere; }
-  .note.ok { color: var(--ok); } .note.bad { color: var(--bad); }
+  .note.ok { color: var(--ok); } .note.warn { color: var(--warn); } .note.bad { color: var(--bad); }
 </style>
 </head>
 <body>
@@ -225,8 +225,9 @@ let renderQueued = false;
 const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
 const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
 
-function bubble(role, text) {
+function bubble(role, text, at) {
   const n = el('div', `msg ${role}`);
+  if (at) n.dataset.at = at;
   if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(text); }
   else n.textContent = text;
   return n;
@@ -235,7 +236,7 @@ function bubble(role, text) {
 function renderHistory(entries) {
   msgs.replaceChildren();
   if (!entries.length) msgs.append(el('div', 'empty', 'Спросите планировщика о проектах и планах. Он может читать и менять планы автопилота.'));
-  for (const e of entries) msgs.append(bubble(e.role, e.text));
+  for (const e of entries) msgs.append(bubble(e.role, e.text, e.at));
   streamBubble = null;
 }
 
@@ -324,7 +325,10 @@ $('composer').addEventListener('submit', async ev => {
     input.value = '';
     autosize();
     msgs.querySelector('.empty')?.remove();
-    msgs.append(bubble('user', text));
+    // The SSE 'busy' event may have already reloaded history with this very message.
+    const shown = [...msgs.querySelectorAll('.msg.user')].some(n =>
+      n.textContent === text && Math.abs(Date.now() - Date.parse(n.dataset.at)) <= 5000);
+    if (!shown) msgs.append(bubble('user', text, new Date().toISOString()));
     streamText = '';
     setBusy(true);
     toBottom();
@@ -425,9 +429,14 @@ async function command(cmd, label) {
   note.textContent = 'Отправляю…';
   for (const b of [$('pause-btn'), $('resume-btn')]) b.disabled = true;
   try {
-    await api('api/command', { cmd });
-    note.className = 'note ok';
-    note.textContent = `✓ Команда «${label}» отправлена. Автопилот выполнит её в течение минуты.`;
+    const r = await api('api/command', { cmd });
+    if (r.warning) {
+      note.className = 'note warn';
+      note.textContent = `⚠ Команда «${label}» отправлена, но: ${r.warning}`;
+    } else {
+      note.className = 'note ok';
+      note.textContent = `✓ Команда «${label}» отправлена. Автопилот выполнит её в течение минуты.`;
+    }
     setTimeout(loadStatus, 3000);
   } catch (err) {
     note.className = 'note bad';

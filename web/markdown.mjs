@@ -11,14 +11,15 @@ const MARK = '\u0000';
 function inline(raw) {
   const held = [];
   const hold = html => `${MARK}${held.push(html) - 1}${MARK}`;
+  const release = str => str.replace(new RegExp(`${MARK}(\\d+)${MARK}`, 'g'), (_, i) => held[i]);
   let s = escapeHtml(raw.replaceAll(MARK, ''));
   s = s.replace(/`([^`\n]+)`/g, (_, c) => hold(`<code>${c}</code>`));
   // Only http(s) links; the text part excludes '[' so scanning stays linear.
   s = s.replace(/\[([^\[\]\n]*)\]\((https?:\/\/[^\s()]+)\)/g,
-    (_, t, url) => hold(`<a href="${url}" target="_blank" rel="noopener">${t}</a>`));
+    (_, t, url) => hold(`<a href="${url}" target="_blank" rel="noopener">${release(t)}</a>`));
   s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  return s.replace(new RegExp(`${MARK}(\\d+)${MARK}`, 'g'), (_, i) => held[i]);
+  return release(s);
 }
 
 function listItem(text) {

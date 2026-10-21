@@ -14,8 +14,10 @@ import { killOrphan } from '../lib/runner.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_TEXT = 20_000;
 const MAX_BODY = 256 * 1024;
+const MAX_HISTORY_BYTES = 1024 * 1024 - 1024; // the freshest entries that fit; leaves room for the envelope
 const HEARTBEAT_MS = 25_000;
 const COMMAND_WORDS = { pause: 'пауза', resume: 'продолжить' };
+const COMMANDS_OFF = 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит';
 
 export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html') } = {}) {
   const webDir = join(cfg.stateDir, 'web');
@@ -39,7 +41,7 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     'GET /': (req, res) => sendFile(res, indexFile, 'text/html; charset=utf-8'),
     'GET /markdown.mjs': (req, res) => sendFile(res, join(HERE, 'markdown.mjs'), 'text/javascript; charset=utf-8'),
 
-    'GET /api/history': (req, res) => sendJson(res, 200, { busy: chat.busy(), entries: chat.history() }),
+    'GET /api/history': (req, res) => sendJson(res, 200, { busy: chat.busy(), entries: freshest(chat.history(), MAX_HISTORY_BYTES) }),
 
     'POST /api/chat': async (req, res) => {
       const body = await readJson(req);
@@ -109,7 +111,8 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
           signal: AbortSignal.timeout(15_000),
         });
         if (!r.ok) return sendJson(res, 502, { ok: false, error: `ntfy ответил ${r.status}` });
-        sendJson(res, 200, { ok: true });
+        // The daemon only listens to the command topic with ntfyCommands on.
+        sendJson(res, 200, cfg.ntfyCommands ? { ok: true } : { ok: true, warning: COMMANDS_OFF });
       } catch (err) {
         sendJson(res, 502, { ok: false, error: `ntfy недоступен: ${err.message}` });
       }
@@ -143,6 +146,19 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       server.closeAllConnections();
     }),
   };
+}
+
+// Whole entries from the end while their JSON fits in `limit` bytes.
+function freshest(entries, limit) {
+  let size = 0;
+  let i = entries.length;
+  while (i > 0) {
+    const bytes = Buffer.byteLength(JSON.stringify(entries[i - 1])) + 1;
+    if (size + bytes > limit) break;
+    size += bytes;
+    i--;
+  }
+  return entries.slice(i);
 }
 
 const sseFrame = ({ type, ...data }) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
