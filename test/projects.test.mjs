@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   listProjects, progressPathFor, listPlans, findPlan, effectiveConfig, requestSwitch, takeSwitch, applySwitch,
-  mentionContext,
+  mentionContext, projectError,
 } from '../lib/projects.mjs';
 import { loadState, saveState } from '../lib/state.mjs';
 
@@ -144,4 +144,41 @@ test('mentionContext: адрес почты, неизвестное имя, им
   const projects = listProjects(cfgWithProjects('/nonexistent'));
   assert.equal(mentionContext('пиши на a@beta.ru или @nope, @alphabet', projects, ACTIVE), null);
   assert.equal(mentionContext('без упоминаний', projects, ACTIVE), null);
+});
+
+test('mentionContext: регистр не важен', () => {
+  const projects = [{ name: 'sigaret', projectDir: BETA, plansDir: 'plans' }];
+  const want = `[Проекты из сообщения]\n- @sigaret: projectDir=${BETA}, план=plans/other.md, прогресс=plans/other.progress.md, автопилот: не активен`;
+  assert.equal(mentionContext('что с @Sigaret?', projects, ACTIVE), want);
+  assert.equal(mentionContext('@SIGARET', projects, ACTIVE), want);
+  assert.equal(mentionContext('@sigaret', projects, ACTIVE), want);
+  assert.equal(mentionContext('пиши на a@Sigaret.ru', projects, ACTIVE), null);
+});
+
+test('projectError: нет plansDir, нет projectDir, нет папки → текст; исправный → null', () => {
+  assert.equal(projectError({ name: 'x', projectDir: ALPHA }), 'Нет plansDir');
+  assert.equal(projectError({ name: 'x', plansDir: 'plans' }), 'Нет projectDir');
+  assert.equal(projectError({ name: 'x', projectDir: '/nonexistent', plansDir: 'plans' }), 'Нет папки /nonexistent/plans');
+  assert.equal(projectError({ name: 'alpha', projectDir: ALPHA, plansDir: 'plans' }), null);
+});
+
+test('битая запись в projects не ломает findPlan и mentionContext для остальных', () => {
+  const cfg = cfgWithProjects('/nonexistent');
+  cfg.projects.push({ name: 'broken', projectDir: BETA });
+  assert.equal(findPlan(cfg, 'broken', 'plans/other.md'), null);
+  assert.equal(findPlan(cfg, 'beta', 'plans/other.md').project.name, 'beta');
+  const block = mentionContext('@broken и @beta', listProjects(cfg), ACTIVE);
+  assert.match(block, /^- @broken: ошибка в config\.json: Нет plansDir$/m);
+  assert.match(block, /^- @beta: projectDir=/m);
+});
+
+test('effectiveConfig: active.json без progressPath', () => {
+  const dir = tempDir('ap-');
+  const cfg = cfgWithProjects(dir);
+  writeFileSync(join(dir, 'active.json'), JSON.stringify({ projectDir: ALPHA, planPath: 'plans/2026-01-a.md' }));
+  assert.equal(effectiveConfig(cfg).progressPath, 'plans/journal.md', 'progressPath проекта');
+  writeFileSync(join(dir, 'active.json'), JSON.stringify({ projectDir: BETA + '/', planPath: 'plans/other.md' }));
+  assert.equal(effectiveConfig(cfg).progressPath, 'plans/other.progress.md', 'проект без progressPath');
+  writeFileSync(join(dir, 'active.json'), JSON.stringify({ projectDir: '/elsewhere', planPath: 'docs/p.md' }));
+  assert.equal(effectiveConfig(cfg).progressPath, 'docs/p.progress.md', 'проект не найден');
 });

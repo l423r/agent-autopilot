@@ -37,14 +37,14 @@
 
 **Files:** Modify `lib/projects.mjs`, `web/server.mjs`, `web/index.html`, `web/chat.mjs`; Test `test/projects.test.mjs`, `test/web-server.test.mjs`, `test/web-chat.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `mentionContext: регистр не важен` — `@Sigaret` и `@SIGARET` → блок для `sigaret`; `a@Sigaret.ru` → `null`.
   - `/api/projects: битая запись` — второй проект без `plansDir` → 200, первый проект как обычно, у битого `{ name, error: 'Нет plansDir' }` (и для несуществующей папки — `error`).
   - `effectiveConfig: active.json без progressPath` → `progressPath = progressPathFor(project, planPath)` (проект ищется по `projectDir`; не найден — `planPath` с `.progress.md`).
   - `чат: ошибка до запуска Claude в истории` — нечитаемый `promptFile` → запись `{ role: 'error' }` в `/api/history`.
-- [ ] **Step 2:** `npm test` → FAIL.
-- [ ] **Step 3:** Реализовать; страница показывает карточку битого проекта серой с текстом ошибки, без кнопок.
-- [ ] **Step 4:** `npm test` → PASS. **Commit** — `fix: case-insensitive mentions, broken project entries, early chat errors`
+- [x] **Step 2:** `npm test` → FAIL.
+- [x] **Step 3:** Реализовать; страница показывает карточку битого проекта серой с текстом ошибки, без кнопок.
+- [x] **Step 4:** `npm test` → PASS. **Commit** — `fix: case-insensitive mentions, broken project entries, early chat errors`
 
 ### Task 3: Правило «без шага git push» в планах
 

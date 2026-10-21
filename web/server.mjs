@@ -12,7 +12,7 @@ import { parsePlan } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
 import { killOrphan } from '../lib/runner.mjs';
-import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, mentionContext } from '../lib/projects.mjs';
+import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, mentionContext, projectError } from '../lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_TEXT = 20_000;
@@ -53,7 +53,15 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     const active = effectiveConfig(cfg);
     const state = loadState(cfg.stateDir);
     return listProjects(active).map(project => {
-      const plans = listPlans(project);
+      // A broken entry in config.json shows as its own card instead of failing the whole list.
+      let plans;
+      try {
+        const error = projectError(project);
+        if (error) return { name: project.name, error };
+        plans = listPlans(project);
+      } catch (err) {
+        return { name: project.name, error: err.message };
+      }
       const isActive = resolve(project.projectDir) === resolve(active.projectDir);
       const currentPlan = isActive ? active.planPath : (plans.find(p => !p.finished) ?? plans[0])?.planPath ?? null;
       return { name: project.name, projectDir: project.projectDir, active: isActive, status: isActive ? state.status : null, currentPlan, plans };

@@ -237,6 +237,21 @@ test('GET /api/projects: все проекты, активный со стату
   assert.equal(beta.currentPlan, 'plans/other.md');
 });
 
+test('/api/projects: битая запись', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  cfg.projects[1] = { name: 'beta', projectDir: join(FIX, 'beta') };
+  cfg.projects.push({ name: 'gone', projectDir: join(root, 'nope'), plansDir: 'plans' });
+  await start();
+  const res = await get('/api/projects');
+  assert.equal(res.status, 200);
+  const [alpha, beta, gone] = await json(res);
+  assert.equal(alpha.name, 'alpha');
+  assert.equal(alpha.active, true);
+  assert.equal(alpha.plans.length, 3);
+  assert.deepEqual(beta, { name: 'beta', error: 'Нет plansDir' });
+  assert.deepEqual(gone, { name: 'gone', error: `Нет папки ${join(root, 'nope', 'plans')}` });
+});
+
 test('POST /api/chat с @проектом: Claude получает служебный блок, в истории — текст без него', async () => {
   withProjects({ active: ALPHA_B, status: 'idle' });
   const argvFile = join(root, 'argv.json');

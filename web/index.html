@@ -128,6 +128,8 @@
   .projects { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
   .project { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
   .project.active { border-color: var(--accent); }
+  .project.broken { opacity: .6; padding: 12px; }
+  .project.broken .pname { font-weight: 600; overflow-wrap: anywhere; }
   .card-head { display: block; width: 100%; min-height: 48px; padding: 12px; border: none; background: none; text-align: left; }
   .card-head .row { display: flex; align-items: center; gap: 8px; }
   .card-head .pname { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
@@ -542,7 +544,7 @@ async function updateMentions() {
   mentionBox.replaceChildren(...found.map(p => {
     const b = el('button', null, `@${p.name}`);
     b.type = 'button';
-    b.append(el('small', null, p.active ? 'в работе' : p.projectDir));
+    b.append(el('small', null, p.error ? 'ошибка в config.json' : p.active ? 'в работе' : p.projectDir));
     b.addEventListener('pointerdown', ev => ev.preventDefault()); // keep the keyboard open
     b.addEventListener('click', () => insertMention(p.name));
     return b;
@@ -753,6 +755,11 @@ function planBlock(project, info, isCurrent) {
 }
 
 function projectCard(project) {
+  if (project.error) {
+    const li = el('li', 'project broken');
+    li.append(el('div', 'pname', project.name), el('div', 'meta', `Ошибка в config.json: ${project.error}`));
+    return li;
+  }
   const li = el('li', `project${project.active ? ' active' : ''}`);
   const head = el('button', 'card-head');
   head.type = 'button';

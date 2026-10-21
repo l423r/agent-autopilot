@@ -68,13 +68,22 @@ export function createChat({
     const emit = event => { try { onEvent(event); } catch { /* listener gone; the answer is still saved */ } };
     append('user', text, images?.length ? { images } : {});
 
+    let systemPrompt;
+    try {
+      systemPrompt = readFileSync(promptFile, 'utf8');
+    } catch (err) {
+      const error = `Не удалось запустить Claude: ${err.message}`;
+      append('error', error);
+      emit({ type: 'error', text: error });
+      return;
+    }
     const sessionId = readSession();
     const args = [
       '-p', [text, extra].filter(Boolean).join('\n\n'),
       '--output-format', 'stream-json', '--verbose',
       '--permission-mode', 'dontAsk',
       '--settings', join(cfg.autopilotDir, 'claude-settings.json'),
-      '--append-system-prompt', readFileSync(promptFile, 'utf8'),
+      '--append-system-prompt', systemPrompt,
     ];
     if (sessionId) args.push('--resume', sessionId);
 

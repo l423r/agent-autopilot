@@ -60,6 +60,17 @@ test('separate assistant messages (text around tool calls) are split by a blank 
   }
 });
 
+test('чат: ошибка до запуска Claude в истории', async () => {
+  const chat = createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake, promptFile: join(root, 'missing-prompt.md') });
+  const events = await sendCollect(chat, 'привет');
+  assert.deepEqual(roles(chat), ['user', 'error']);
+  assert.match(chat.history()[1].text, /^Не удалось запустить Claude: .*missing-prompt\.md/);
+  assert.deepEqual(events.map(e => e.type), ['error']);
+  assert.equal(events[0].text, chat.history()[1].text);
+  assert.equal(chat.busy(), false);
+  assert.equal(existsSync(argvFile), false, 'Claude не запускался');
+});
+
 test('history survives a new chat instance (read from history.jsonl)', async () => {
   await sendCollect(make(), 'привет');
   assert.deepEqual(roles(make()), ['user', 'assistant']);
@@ -182,10 +193,11 @@ test('reset clears history and session', async () => {
 
 test('send: исключение до запуска снимает занятость', async () => {
   const chat = createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake, promptFile: join(root, 'no-such-prompt.md') });
-  await assert.rejects(chat.send('привет', () => {}));
+  await chat.send('привет', () => {});
   assert.equal(chat.busy(), false);
-  await assert.rejects(chat.send('ещё', () => {}), err => err.message !== 'busy');
+  await chat.send('ещё', () => {});
   assert.equal(chat.busy(), false);
+  assert.deepEqual(roles(chat), ['user', 'error', 'user', 'error']);
 });
 
 test('stop: таймер SIGKILL снимается после выхода', async () => {
