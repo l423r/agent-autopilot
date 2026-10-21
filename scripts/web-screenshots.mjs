@@ -3,7 +3,7 @@
 // and saves docs/screenshots/web-<screen>.png. Fails on a console error, horizontal scrolling or script injection.
 // Usage: node scripts/web-screenshots.mjs [planFile]   (default: the sigaret-counter plan)
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,9 +30,15 @@ const failures = [];
 const fail = msg => { failures.push(msg); console.error(`✗ ${msg}`); };
 
 const work = mkdtempSync(join(tmpdir(), 'pult-shots-'));
-const projectDir = join(work, 'project');
-mkdirSync(projectDir);
-copyFileSync(PLAN, join(projectDir, 'plan.md'));
+// Two projects: the active one on the given plan, the other with this repo's plans (finished and not).
+const projectDir = join(work, 'sigaret');
+mkdirSync(join(projectDir, 'plans'), { recursive: true });
+copyFileSync(PLAN, join(projectDir, 'plans', basename(PLAN)));
+const otherDir = join(work, 'autopilot');
+mkdirSync(join(otherDir, 'plans'), { recursive: true });
+for (const name of ['2026-10-21-web-panel.md', '2026-10-21-pult-v2.md']) {
+  copyFileSync(join(ROOT, 'docs', 'plans', name), join(otherDir, 'plans', name));
+}
 const stateDir = join(work, 'state');
 mkdirSync(stateDir);
 writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ status: 'running', currentTask: 'Task 7' }));
@@ -48,7 +54,8 @@ await new Promise(r => ntfy.listen(0, '127.0.0.1', r));
 process.env.FAKE_STREAM = 'slow';
 process.env.FAKE_PARTS = JSON.stringify(ANSWER);
 const cfg = {
-  projectDir, planPath: 'plan.md', stateDir, autopilotDir: ROOT,
+  projectDir, planPath: join('plans', basename(PLAN)), stateDir, autopilotDir: ROOT,
+  projects: [{ name: 'sigaret', projectDir, plansDir: 'plans' }, { name: 'autopilot', projectDir: otherDir, plansDir: 'plans' }],
   ntfyServer: `http://127.0.0.1:${ntfy.address().port}`, ntfyTopic: 'shots', ntfyCommandToken: 'tk_shots', ntfyCommands: true,
 };
 const LIMITS = {
@@ -141,12 +148,12 @@ try {
 
   // `@` opens the project picker above the field; a tap inserts `@name `, the sent message highlights it.
   await page.fill('#input', '');
-  await page.type('#input', 'Что с @pro');
+  await page.type('#input', 'Что с @sig');
   await page.waitForSelector('#mentions:not(.hidden) button');
   await shot('chat-mention');
   await page.click('#mentions button');
   const typed = await page.inputValue('#input');
-  if (typed !== 'Что с @project ') fail(`после выбора проекта в поле «${typed}»`);
+  if (typed !== 'Что с @sigaret ') fail(`после выбора проекта в поле «${typed}»`);
   if (await page.isVisible('#mentions')) fail('список проектов не закрылся после выбора');
   await page.type('#input', 'и a@mail.ru?');
   await page.click('#send-btn');
@@ -154,6 +161,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 2, null, { timeout: 15_000 });
   const marks = await page.evaluate(() => [...document.querySelectorAll('.msg.user')].at(-1).querySelectorAll('.mention').length);
   if (marks !== 1) fail(`в сообщении подсвечено упоминаний: ${marks}, нужно 1`);
+  if (await page.evaluate(() => document.body.innerText.includes('[Проекты из сообщения]'))) fail('служебный блок проектов виден на странице');
 
   // 📎: a big picture is shrunk to 2000 px JPEG, uploaded, shown above the field; it can go without text.
   const bigPng = await page.evaluate(async () => {
@@ -203,6 +211,8 @@ try {
 
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
+  const names = await page.$$eval('#projects .project .pname', ns => ns.map(n => n.textContent));
+  if (names.join() !== 'sigaret,autopilot') fail(`проекты во вкладке «План»: ${names}`);
   await shot('plan-projects');
   await page.click('#projects .project.active .card-head');
   await page.waitForSelector('#projects .plan .task');
@@ -223,6 +233,26 @@ try {
   await page.waitForSelector('#projects .plan .task.open .body:not(.hidden)');
   await target.evaluate(n => n.scrollIntoView({ block: 'start' }));
   await shot('plan-task-open');
+
+  // The other project lists all its plans; «Запустить» while a task runs → switch after the task.
+  await page.click('#projects .project.active .card-head');
+  const other = '#projects .project:not(.active)';
+  await page.click(`${other} .card-head`);
+  await page.waitForSelector(`${other} .details:not(.hidden) .plan-row`);
+  const plans = await page.$$eval(`${other} .plan-row`, ns => ns.map(n => n.innerText.replace(/\s+/g, ' ').trim()));
+  if (plans.length !== 2 || !plans.some(p => p.includes('Запустить'))) fail(`планы второго проекта: ${JSON.stringify(plans)}`);
+  // The current plan opens with its tasks; fold them so the picture shows the list of plans.
+  await page.waitForSelector(`${other} .plan ul.tasks:not(.hidden) .task`);
+  await page.click(`${other} .plan-toggle`);
+  await page.$eval(`${other} .card-head`, n => n.scrollIntoView({ block: 'start' }));
+  await shot('plan-other-project');
+  await page.click(`${other} .plan-row .btn`);
+  await page.waitForSelector('#switch-note.ok');
+  const note = await page.$eval('#switch-note', n => n.textContent);
+  if (!note.startsWith('✓ Переключится после текущей задачи: autopilot / ')) fail(`итог «Запустить»: ${note}`);
+  if (!existsSync(join(stateDir, 'switch.json'))) fail('switch.json не записан');
+  await page.$eval('#switch-note', n => n.scrollIntoView({ block: 'start' }));
+  await shot('plan-switch');
 
   await page.click('#menu-btn');
   await page.click('#limits-btn');
