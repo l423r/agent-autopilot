@@ -80,16 +80,16 @@
 **Interfaces:**
 - Produces: `subscribeCommands(cfg, { sinceFile: string, onMessage: (msg: {id, time, message}) => void|Promise<void>, log: (s) => void }): { stop(): void }` — URL `${ntfyServer}/${ntfyTopic}-cmd/json?since=<id|unix-seconds>`, заголовок `Authorization: Bearer ${ntfyToken}` при наличии. После каждого обработанного `message` записывает его id в `sinceFile` (атомарно). Переподключение с задержкой 5 с, удваивая до 60 с; удачное соединение сбрасывает задержку.
 
-- [ ] **Step 1: Тесты** с локальным HTTP-сервером, отдающим поток строк JSON:
+- [x] **Step 1: Тесты** с локальным HTTP-сервером, отдающим поток строк JSON:
   - доставляет `message`, игнорирует `open`/`keepalive` и битую строку;
   - после обрыва соединения переподключается и запрашивает `since=<id последнего>`; сообщение не доставлено дважды;
   - без `sinceFile` первый запрос — `since=<число секунд ≈ сейчас>`;
   - при 403 пишет в лог и повторяет не раньше чем через задержку (в тесте — укороченную через `cfg.__retryMs`);
   - `stop()` закрывает соединение и прекращает переподключения.
-- [ ] **Step 2:** `npm test` → FAIL
-- [ ] **Step 3:** Реализовать `lib/listen.mjs` (`fetch` + `AbortController`, чтение `res.body` по строкам)
-- [ ] **Step 4:** `npm test` → PASS все
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): ntfy command subscription with reconnect"`
+- [x] **Step 2:** `npm test` → FAIL
+- [x] **Step 3:** Реализовать `lib/listen.mjs` (`fetch` + `AbortController`, чтение `res.body` по строкам)
+- [x] **Step 4:** `npm test` → PASS все
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): ntfy command subscription with reconnect"`
 
 ## Этап 2. Встраивание
 
