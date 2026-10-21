@@ -136,10 +136,10 @@
 **Files:**
 - Create: `scripts/live-check.mjs`
 
-- [ ] **Step 1:** Скрипт `scripts/live-check.mjs`: временный проект с маленьким планом (2 задачи), конфиг с настоящим `ntfyServer`/`ntfyToken`/`ntfyCommandToken` из `config.json`, но тема `<ntfyTopic>-livecheck`, `AUTOPILOT_CLAUDE` = `test/fixtures/fake-claude.mjs` в режиме `slow`; запускает `autopilot.mjs run` отдельным процессом (свой `stateDir`, служба не трогается). Затем от имени телефона (`ntfyCommandToken`, curl/fetch) публикует `статус`, `пауза`, `продолжить` и проверяет по `…-livecheck/json?poll=1` ответы и состояние. Падает с понятным сообщением при любом расхождении.
-- [ ] **Step 2:** Запустить `node scripts/live-check.mjs` → все проверки OK; проверить, что опубликованное уведомление содержит `actions` (из `poll=1`) и что кнопка из него, отправленная как есть (url, тело, заголовок), принимается сервером (200).
-- [ ] **Step 3:** Итог (что проверено, ответы сервера) — в журнал `docs/plans/2026-10-21-ntfy-commands.progress.md`
-- [ ] **Step 4: Commit** — `git commit -m "test(autopilot): live check of phone commands"`
+- [x] **Step 1:** Скрипт `scripts/live-check.mjs`: временный проект с маленьким планом (2 задачи), конфиг с настоящим `ntfyServer`/`ntfyToken`/`ntfyCommandToken` из `config.json`, но тема `<ntfyTopic>-livecheck`, `AUTOPILOT_CLAUDE` = `test/fixtures/fake-claude.mjs` в режиме `slow`; запускает `autopilot.mjs run` отдельным процессом (свой `stateDir`, служба не трогается). Затем от имени телефона (`ntfyCommandToken`, curl/fetch) публикует `статус`, `пауза`, `продолжить` и проверяет по `…-livecheck/json?poll=1` ответы и состояние. Падает с понятным сообщением при любом расхождении.
+- [x] **Step 2:** Запустить `node scripts/live-check.mjs` → все проверки OK; проверить, что опубликованное уведомление содержит `actions` (из `poll=1`) и что кнопка из него, отправленная как есть (url, тело, заголовок), принимается сервером (200).
+- [x] **Step 3:** Итог (что проверено, ответы сервера) — в журнал `docs/plans/2026-10-21-ntfy-commands.progress.md`
+- [x] **Step 4: Commit** — `git commit -m "test(autopilot): live check of phone commands"`
 
 ### Task 6: Ревью кода
 
