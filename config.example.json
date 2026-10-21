@@ -3,6 +3,10 @@
   "planPath": "docs/superpowers/plans/2026-10-20-sigaret-counter-app.md",
   "autopilotDir": "/root/agent-autopilot",
   "progressPath": "docs/superpowers/progress.md",
+  "projects": [
+    { "name": "autopilot", "projectDir": "/root/agent-autopilot", "plansDir": "docs/plans" },
+    { "name": "sigaret", "projectDir": "/root/sigaret-counter", "plansDir": "docs/superpowers/plans", "progressPath": "docs/superpowers/progress.md" }
+  ],
   "retryMinutes": 15,
   "maxAttempts": 3,
   "iterationTimeoutMinutes": 60,

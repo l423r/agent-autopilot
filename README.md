@@ -21,7 +21,7 @@
 
 ```bash
 cd /root/agent-autopilot
-cp config.example.json config.json   # поправить projectDir / planPath / progressPath
+cp config.example.json config.json   # поправить projectDir / planPath / progressPath и projects
 bash install.sh                      # ставит и включает службу (не запускает)
 echo 'EXPO_TOKEN=...' >> /root/.config/agent-autopilot.env   # если проекту нужны секреты
 ```
@@ -84,6 +84,7 @@ bash /root/agent-autopilot/scripts/setup-web.sh
 
 ## Проекты и переключение
 
+- **Один конфиг на все проекты.** Общие настройки (ntfy, лимиты, `stateDir`) — в одном `config.json`; проекты — в его списке `projects`, отдельные `config.<проект>.json` не нужны. Переключение между проектами и планами — кнопка «Запустить» во вкладке «План» пульта (или `switch.json`, см. ниже).
 - **Список проектов** — необязательное поле `projects` в `config.json`: `[{ "name": "…", "projectDir": "/abs/path", "plansDir": "docs/plans", "progressPath"?: "…" }]`. Планы проекта — все `*.md` в `plansDir` (без подпапок), кроме `*.progress.md` и `progressPath`; журнал плана без своего `progressPath` — `<план>.progress.md`. Без `projects` проект один — из `projectDir`/`planPath`/`progressPath`.
 - **Активный план** — `state/active.json` (`{ projectDir, planPath, progressPath }`, пути — как в `config.json`). Если файл есть, он перекрывает эти три поля конфига для `run`, `once` и `status`; нет файла — работает как раньше.
 - **Переключение** — запрос `state/switch.json` того же формата (его пишет пульт; новый запрос заменяет прежний). Демон берёт его только между задачами: текущая задача доходит до конца на старом плане, затем демон пишет `active.json`, сбрасывает состояние и счётчики попыток (`state.json` → `idle`), отменяет отложенную паузу и шлёт уведомление «Переключено: <проект> / <план>». Если автопилот остановлен (`done`/`paused`/`halted`/…) или ждёт сброса лимита, переключение происходит в течение секунды — но только при `"ntfyCommands": true`: без команд остановленный демон завершается, и запрос применится при следующем `run`.
