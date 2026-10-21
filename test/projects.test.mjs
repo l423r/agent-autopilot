@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   listProjects, progressPathFor, listPlans, findPlan, effectiveConfig, requestSwitch, takeSwitch, applySwitch,
-  mentionContext, projectError,
+  mentionContext, projectError, projectByDir,
 } from '../lib/projects.mjs';
 import { loadState, saveState } from '../lib/state.mjs';
 
@@ -181,4 +181,11 @@ test('effectiveConfig: active.json без progressPath', () => {
   assert.equal(effectiveConfig(cfg).progressPath, 'plans/other.progress.md', 'проект без progressPath');
   writeFileSync(join(dir, 'active.json'), JSON.stringify({ projectDir: '/elsewhere', planPath: 'docs/p.md' }));
   assert.equal(effectiveConfig(cfg).progressPath, 'docs/p.progress.md', 'проект не найден');
+});
+
+test('projectByDir: запись без projectDir не роняет поиск (переключение плана в демоне)', () => {
+  const cfg = cfgWithProjects('/nonexistent');
+  cfg.projects.unshift({ name: 'broken', plansDir: 'plans' });
+  assert.equal(projectByDir(cfg, BETA + '/').name, 'beta');
+  assert.equal(projectByDir(cfg, '/elsewhere'), undefined);
 });

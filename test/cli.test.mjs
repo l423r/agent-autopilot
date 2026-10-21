@@ -277,11 +277,11 @@ const waitFor = async (cond, ms = 15_000) => {
 };
 
 // A daemon with ntfyCommands on, running as a separate process; stop() sends SIGTERM.
-async function daemon(mode, { preState, since, fakePlan } = {}) {
+async function daemon(mode, { preState, since, fakePlan, config } = {}) {
   const { spawn } = await import('node:child_process');
   const n = await fakeNtfyCmd();
   const { root, cfg } = setup();
-  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp', ntfyCommands: true, ntfyCommandToken: 'phone' }));
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp', ntfyCommands: true, ntfyCommandToken: 'phone', ...config }));
   mkdirSync(join(root, 'state'), { recursive: true });
   if (preState) writeFileSync(join(root, 'state', 'state.json'), JSON.stringify(preState));
   if (since) writeFileSync(join(root, 'state', 'commands.since'), since + '\n');
@@ -508,6 +508,23 @@ test('switch: запрос на несуществующий план не ро�
     assert.ok(!existsSync(join(d.root, 'state', 'active.json')));
     assert.ok(!existsSync(join(d.root, 'state', 'switch.json')));
     assert.equal(state(d.root).status, 'done');
+  } finally {
+    await d.stop();
+  }
+});
+
+test('switch: запись projects без projectDir не роняет демон при переключении', async () => {
+  const d = await daemon('tick', {
+    fakePlan: '',
+    preState: { status: 'done', currentTask: null, attempts: {}, nextAttemptAt: null, reason: 'План выполнен' },
+    config: { projects: [{ name: 'broken', plansDir: '.' }, { name: 'proj' }] },
+  });
+  try {
+    await waitFor(() => d.n.subs.length > 0);
+    requestSwitch(join(d.root, 'state'), toB(d.root));
+    await waitFor(() => d.replies().some(r => /Переключено/.test(r.body)) || d.child.exitCode !== null, 2500);
+    assert.equal(d.child.exitCode, null, 'демон работает');
+    assert.equal(active(d.root).planPath, 'plan2.md');
   } finally {
     await d.stop();
   }

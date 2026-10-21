@@ -13,7 +13,7 @@ import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
-import { effectiveConfig, takeSwitch, applySwitch, listProjects, progressPathFor } from './lib/projects.mjs';
+import { effectiveConfig, takeSwitch, applySwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -202,7 +202,7 @@ async function applyPendingSwitch(cfg) {
   try { requestedAt = statSync(join(cfg.stateDir, 'switch.json')).mtimeMs; } catch { return; }
   const t = takeSwitch(cfg.stateDir);
   if (!t) return;
-  const project = listProjects(cfg).find(p => resolve(p.projectDir) === resolve(t.projectDir));
+  const project = projectByDir(cfg, t.projectDir);
   const label = `${project?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
   // switch.json may be written by hand: a missing plan must not become a crash loop via active.json.
   if (!existsSync(resolve(t.projectDir, t.planPath))) {
