@@ -51,7 +51,13 @@ const cfg = {
   projectDir, planPath: 'plan.md', stateDir, autopilotDir: ROOT,
   ntfyServer: `http://127.0.0.1:${ntfy.address().port}`, ntfyTopic: 'shots', ntfyCommandToken: 'tk_shots', ntfyCommands: true,
 };
-const server = await startServer(cfg, { port: 0, claudeBin: join(ROOT, 'test', 'fixtures', 'fake-claude-stream.mjs') });
+const LIMITS = {
+  fiveHour: { percent: 37, resetsAt: new Date(Date.now() + 30 * 60_000).toISOString() },
+  week: { percent: 81.4, resetsAt: new Date(Date.now() + 6 * 86_400_000).toISOString() },
+};
+const server = await startServer(cfg, {
+  port: 0, claudeBin: join(ROOT, 'test', 'fixtures', 'fake-claude-stream.mjs'), limitsFetch: async () => LIMITS,
+});
 const url = `http://127.0.0.1:${server.port}/`;
 
 const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
@@ -217,6 +223,25 @@ try {
   await page.waitForSelector('#projects .plan .task.open .body:not(.hidden)');
   await target.evaluate(n => n.scrollIntoView({ block: 'start' }));
   await shot('plan-task-open');
+
+  await page.click('#menu-btn');
+  await page.click('#limits-btn');
+  await page.waitForSelector('#limits .limit .bar');
+  const limits = await page.$$eval('#limits .limit', ns => ns.map(n => n.innerText.replace(/\s+/g, ' ').trim()));
+  const pad = n => String(n).padStart(2, '0');
+  const week = new Date(LIMITS.week.resetsAt);
+  const weekDate = `${pad(week.getDate())}.${pad(week.getMonth() + 1)}`;
+  if (!/^5 часов 37% сброс (сегодня|\d\d\.\d\d) \d\d:\d\d$/.test(limits[0] ?? '')) fail(`лимит 5 часов: ${limits[0]}`);
+  if (!new RegExp(`^Неделя 81% сброс ${weekDate.replace('.', '\\.')} \\d\\d:\\d\\d$`).test(limits[1] ?? '')) fail(`лимит неделя: ${limits[1]}`);
+  if (await page.$('nav.tabs button.active')) fail('при лимитах подсвечена вкладка');
+  await shot('limits');
+
+  await page.route('**/api/limits', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"error":"Сервер лимитов ответил 401"}' }));
+  await page.click('#limits-refresh');
+  await page.waitForFunction(() => document.getElementById('limits').innerText.includes('Нет данных о лимитах'));
+  if (!(await page.$eval('#limits', n => n.innerText)).includes('ответил 401')) fail('нет текста ошибки лимитов');
+  await shot('limits-error');
+  await page.unroute('**/api/limits');
 
   await page.click('nav.tabs button[data-tab="status"]');
   await page.waitForFunction(() => document.getElementById('status-text').textContent.startsWith('Статус'));

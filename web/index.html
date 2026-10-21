@@ -141,6 +141,14 @@
   .bar.small { height: 6px; }
   .phase { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
 
+  /* Limits */
+  .limit { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .limit .row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .limit .lname { flex: 1; font-weight: 600; }
+  .limit .percent { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .limit .meta { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .bar.warn > div { background: var(--warn); } .bar.bad > div { background: var(--bad); }
+
   /* Status */
   .status-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; padding: 14px; margin: 0 0 16px; font: 15px/1.5 ui-monospace, Menlo, monospace; }
@@ -157,6 +165,7 @@
   <button class="icon-btn" id="menu-btn" aria-label="Меню">⋮</button>
 </header>
 <div class="menu hidden" id="menu">
+  <button id="limits-btn">Лимиты</button>
   <button id="reset-btn">Новый разговор</button>
 </div>
 
@@ -185,6 +194,16 @@
       </div>
       <div class="note hidden" id="switch-note"></div>
       <ul class="projects" id="projects"></ul>
+    </div>
+  </section>
+
+  <section id="tab-limits">
+    <div class="scroll">
+      <div class="plan-head">
+        <div class="name">Лимиты Claude</div>
+        <button class="btn ghost" id="limits-refresh" type="button">Обновить</button>
+      </div>
+      <div id="limits"></div>
     </div>
   </section>
 
@@ -237,6 +256,7 @@ function showTab(name) {
   for (const s of document.querySelectorAll('main section')) s.classList.toggle('active', s.id === `tab-${name}`);
   if (name === 'plan') loadPlan();
   if (name === 'status') loadStatus();
+  if (name === 'limits') loadLimits();
 }
 for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
 
@@ -597,6 +617,41 @@ $('reset-btn').addEventListener('click', async () => {
     toBottom();
   }
 });
+
+/* ---------- Limits ---------- */
+// «сегодня 20:20» or «28.10 06:00», in the phone's time zone.
+function resetText(iso) {
+  if (!iso) return 'время сброса неизвестно';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `сброс ${d.toDateString() === new Date().toDateString() ? 'сегодня' : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`} ${time}`;
+}
+
+function limitBlock(name, w) {
+  const block = el('div', 'limit');
+  const row = el('div', 'row');
+  const percent = Math.max(0, Math.min(100, w.percent));
+  row.append(el('span', 'lname', name), el('span', 'percent', `${Math.round(w.percent)}%`));
+  const bar = progressBar(percent, 100, `bar${percent >= 90 ? ' bad' : percent >= 70 ? ' warn' : ''}`);
+  block.append(row, bar, el('div', 'meta', resetText(w.resetsAt)));
+  return block;
+}
+
+async function loadLimits() {
+  const box = $('limits');
+  if (!box.childElementCount) box.append(el('div', 'meta', 'Загружаю…'));
+  let data;
+  try { data = await api('api/limits'); } catch (err) { data = { error: err.message }; }
+  if (data.error || !data.fiveHour || !data.week) {
+    const block = el('div', 'limit');
+    block.append(el('div', 'lname', 'Нет данных о лимитах'), el('div', 'meta', data.error || 'Неизвестный ответ сервера'));
+    return box.replaceChildren(block);
+  }
+  box.replaceChildren(limitBlock('5 часов', data.fiveHour), limitBlock('Неделя', data.week));
+}
+$('limits-btn').addEventListener('click', () => { $('menu').classList.add('hidden'); showTab('limits'); });
+$('limits-refresh').addEventListener('click', loadLimits);
 
 /* ---------- Plan ---------- */
 const TASK_HEAD = /^#{2,4}\s+Task\s+(\d+)\b/;

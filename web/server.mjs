@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
+import { fetchLimits } from './limits.mjs';
 import { parsePlan } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
@@ -23,10 +24,11 @@ const MAX_IMAGES = 5;
 const KEEP_UPLOADS = 200;
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 const UPLOAD_ID = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+const LIMITS_CACHE_MS = 60_000;
 const COMMAND_WORDS = { pause: 'пауза', resume: 'продолжить' };
 const COMMANDS_OFF = 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит';
 
-export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html') } = {}) {
+export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html'), limitsFetch = () => fetchLimits() } = {}) {
   const webDir = join(cfg.stateDir, 'web');
   // A previous server may have died mid-answer: its claude child is an orphan, and busy is not persisted.
   await killOrphan(webDir);
@@ -56,6 +58,15 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       const currentPlan = isActive ? active.planPath : (plans.find(p => !p.finished) ?? plans[0])?.planPath ?? null;
       return { name: project.name, projectDir: project.projectDir, active: isActive, status: isActive ? state.status : null, currentPlan, plans };
     });
+  };
+
+  // One upstream request per minute at most; concurrent callers share it. Errors are cached too.
+  let limits = null; // { at, promise }
+  const cachedLimits = () => {
+    if (!limits || Date.now() - limits.at >= LIMITS_CACHE_MS) {
+      limits = { at: Date.now(), promise: Promise.resolve().then(limitsFetch).catch(() => ({ error: 'Не удалось получить лимиты' })) };
+    }
+    return limits.promise;
   };
 
   const routes = {
@@ -129,6 +140,7 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       sendJson(res, 200, { ok: true });
     },
 
+    'GET /api/limits': async (req, res) => sendJson(res, 200, await cachedLimits()),
     'GET /api/projects': (req, res) => sendJson(res, 200, projects()),
 
     'GET /api/plan': (req, res) => {
