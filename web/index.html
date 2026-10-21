@@ -64,7 +64,24 @@
   .md pre code { background: none; padding: 0; white-space: pre; word-break: normal; overflow-wrap: normal; }
   .md a { color: var(--accent2); }
 
-  .composer { position: relative; display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+  .composer { position: relative; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+  .attach { flex: none; display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px;
+    border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); font-size: 20px; cursor: pointer; }
+  .attach input { display: none; }
+  .pending { flex-basis: 100%; display: flex; gap: 8px; overflow-x: auto; padding-top: 2px; }
+  .pending .thumb { position: relative; flex: none; width: 72px; height: 72px; border-radius: 10px; overflow: hidden;
+    background: var(--panel2); border: 1px solid var(--line); }
+  .pending .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pending .thumb.loading img { opacity: .4; }
+  .pending .thumb.failed { border-color: var(--bad); }
+  /* 44 px tap area, a small dark circle inside */
+  .pending .thumb .x { position: absolute; top: 0; right: 0; width: 44px; height: 44px; padding: 0; border: none; background: none;
+    display: flex; align-items: flex-start; justify-content: flex-end; }
+  .pending .thumb .x span { width: 26px; height: 26px; border-radius: 0 0 0 10px; background: #000b; color: #fff; font-size: 14px; line-height: 26px; text-align: center; }
+  .msg .imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .msg .imgs:last-child { margin-bottom: 0; }
+  .msg .imgs a { display: block; width: 96px; height: 96px; border-radius: 10px; overflow: hidden; background: #0003; }
+  .msg .imgs img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .composer textarea { flex: 1; min-width: 0; resize: none; max-height: 40vh; min-height: 44px; padding: 10px 12px;
     border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
   .composer textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
@@ -148,7 +165,9 @@
     </div>
     <form class="composer" id="composer">
       <div class="mentions hidden" id="mentions"></div>
-      <textarea id="input" rows="1" placeholder="Сообщение планировщику" maxlength="20000"></textarea>
+      <div class="pending hidden" id="pending"></div>
+      <label class="attach" aria-label="Прикрепить картинку">📎<input type="file" id="file-input" accept="image/*" multiple></label>
+      <textarea id="input" rows="1" placeholder="Сообщение" maxlength="20000"></textarea>
       <button class="btn" id="send-btn" type="submit">Отправить</button>
       <button class="btn stop hidden" id="stop-btn" type="button">Стоп</button>
     </form>
@@ -248,13 +267,34 @@ let renderQueued = false;
 const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
 const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
 
-function bubble(role, text, at) {
+function bubble(role, text, at, images) {
   const n = el('div', `msg ${role}`);
   if (at) n.dataset.at = at;
   if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(text); }
-  else if (role === 'user') n.append(...withMentions(text));
+  else if (role === 'user') {
+    if (images?.length) n.append(imageLinks(images));
+    n.append(...withMentions(text));
+  }
   else n.textContent = text;
   return n;
+}
+
+// Thumbnails of uploaded images; a tap opens the full picture in a new tab.
+function imageLinks(ids) {
+  const box = el('div', 'imgs');
+  for (const id of ids) {
+    const a = el('a');
+    a.href = `uploads/${encodeURIComponent(id)}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const img = el('img');
+    img.src = a.href;
+    img.alt = 'Картинка';
+    img.loading = 'lazy';
+    a.append(img);
+    box.append(a);
+  }
+  return box;
 }
 
 // `@name` at the start or after a space (not in an email address) is shown in the accent colour.
@@ -274,7 +314,7 @@ function withMentions(text) {
 function renderHistory(entries) {
   msgs.replaceChildren();
   if (!entries.length) msgs.append(el('div', 'empty', 'Спросите планировщика о проектах и планах. Он может читать и менять планы автопилота.'));
-  for (const e of entries) msgs.append(bubble(e.role, e.text, e.at));
+  for (const e of entries) msgs.append(bubble(e.role, e.text, e.at, e.images));
   streamBubble = null;
 }
 
@@ -353,6 +393,84 @@ function autosize() {
 }
 input.addEventListener('input', autosize);
 
+/* ---------- Images ---------- */
+const MAX_IMAGES = 5;
+const MAX_SIDE = 2000;
+const pendingBox = $('pending');
+let attachments = []; // { id, url, state: 'loading' | 'ready' | 'failed', node }
+
+function updateSend() {
+  const uploading = attachments.some(a => a.state === 'loading');
+  const ready = attachments.some(a => a.state === 'ready');
+  $('send-btn').disabled = uploading || !(input.value.trim() || ready);
+  pendingBox.classList.toggle('hidden', !attachments.length);
+}
+input.addEventListener('input', updateSend);
+
+// Phone photos weigh megabytes: shrink to MAX_SIDE on the long side, JPEG 0.85.
+async function shrink(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  const blob = await new Promise(ok => canvas.toBlob(ok, 'image/jpeg', 0.85));
+  if (!blob) throw new Error('Не удалось сжать картинку');
+  return blob;
+}
+
+function removeAttachment(a) {
+  attachments = attachments.filter(x => x !== a);
+  a.node.remove();
+  URL.revokeObjectURL(a.url);
+  updateSend();
+}
+
+async function addImage(file) {
+  const a = { id: null, url: URL.createObjectURL(file), state: 'loading', node: el('div', 'thumb loading') };
+  const img = el('img');
+  img.src = a.url;
+  img.alt = file.name;
+  const x = el('button', 'x');
+  x.append(el('span', null, '✕'));
+  x.type = 'button';
+  x.setAttribute('aria-label', 'Убрать картинку');
+  x.addEventListener('click', () => removeAttachment(a));
+  a.node.append(img, x);
+  attachments.push(a);
+  pendingBox.append(a.node);
+  updateSend();
+  try {
+    const blob = await shrink(file);
+    const res = await fetch('api/upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
+    a.id = data.id;
+    a.state = 'ready';
+  } catch (err) {
+    a.state = 'failed';
+    a.node.title = err.message;
+    msgs.append(bubble('error', `Картинка не загружена: ${err.message}`));
+    toBottom();
+  }
+  a.node.classList.remove('loading');
+  a.node.classList.toggle('failed', a.state === 'failed');
+  updateSend();
+}
+
+$('file-input').addEventListener('change', ev => {
+  const files = [...ev.target.files].filter(f => f.type.startsWith('image/'));
+  ev.target.value = '';
+  const room = MAX_IMAGES - attachments.length;
+  if (files.length > room) {
+    msgs.append(bubble('error', `Можно до ${MAX_IMAGES} картинок в сообщении.`));
+    toBottom();
+  }
+  for (const f of files.slice(0, Math.max(0, room))) addImage(f);
+});
+
 /* ---------- @project picker ---------- */
 const mentionBox = $('mentions');
 let projectList = null; // loaded on the first `@`
@@ -400,18 +518,21 @@ input.addEventListener('blur', () => mentionBox.classList.add('hidden'));
 $('composer').addEventListener('submit', async ev => {
   ev.preventDefault();
   const text = input.value.trim();
-  if (!text || busy) return;
+  const sent = attachments.filter(a => a.state === 'ready');
+  const images = sent.map(a => a.id);
+  if ((!text && !images.length) || attachments.some(a => a.state === 'loading') || busy) return;
   $('send-btn').disabled = true;
   mentionBox.classList.add('hidden');
   try {
-    await api('api/chat', { text });
+    await api('api/chat', images.length ? { text, images } : { text });
     input.value = '';
     autosize();
+    for (const a of [...attachments]) removeAttachment(a);
     msgs.querySelector('.empty')?.remove();
     // The SSE 'busy' event may have already reloaded history with this very message.
     const shown = [...msgs.querySelectorAll('.msg.user')].some(n =>
       n.textContent === text && Math.abs(Date.now() - Date.parse(n.dataset.at)) <= 5000);
-    if (!shown) msgs.append(bubble('user', text, new Date().toISOString()));
+    if (!shown) msgs.append(bubble('user', text, new Date().toISOString(), images));
     streamText = '';
     setBusy(true);
     toBottom();
@@ -419,7 +540,7 @@ $('composer').addEventListener('submit', async ev => {
     msgs.append(bubble('error', err.status === 409 ? 'Планировщик ещё отвечает — дождитесь или нажмите «Стоп».' : err.message));
     toBottom();
   } finally {
-    $('send-btn').disabled = false;
+    updateSend();
   }
 });
 input.addEventListener('keydown', ev => {
@@ -439,6 +560,7 @@ $('reset-btn').addEventListener('click', async () => {
   try {
     await api('api/reset', {});
     showTab('chat');
+    for (const a of [...attachments]) removeAttachment(a);
     await loadHistory();
   } catch (err) {
     msgs.append(bubble('error', err.status === 409 ? 'Сначала остановите ответ.' : err.message));
@@ -657,6 +779,7 @@ setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); },
 loadHistory();
 connect();
 loadStatus();
+updateSend();
 </script>
 </body>
 </html>

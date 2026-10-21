@@ -2,7 +2,8 @@
 // Browser control panel: static page, chat with the planner (answers stream over SSE), plan and status,
 // pause/resume through the ntfy command topic. Listens on 127.0.0.1 only; Caddy adds the password.
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync, existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
@@ -17,6 +18,11 @@ const MAX_TEXT = 20_000;
 const MAX_BODY = 256 * 1024;
 const MAX_HISTORY_BYTES = 1024 * 1024 - 1024; // the freshest entries that fit; leaves room for the envelope
 const HEARTBEAT_MS = 25_000;
+const MAX_UPLOAD = 8 * 1024 * 1024;
+const MAX_IMAGES = 5;
+const KEEP_UPLOADS = 200;
+const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+const UPLOAD_ID = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
 const COMMAND_WORDS = { pause: 'пауза', resume: 'продолжить' };
 const COMMANDS_OFF = 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит';
 
@@ -24,6 +30,7 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
   const webDir = join(cfg.stateDir, 'web');
   // A previous server may have died mid-answer: its claude child is an orphan, and busy is not persisted.
   await killOrphan(webDir);
+  const uploadsDir = join(webDir, 'uploads');
   const chat = createChat({ cfg, dir: webDir, ...(claudeBin ? { claudeBin } : {}) });
   const clients = new Set();
   let pending = ''; // text of the answer in progress, for clients that (re)connect mid-answer
@@ -60,15 +67,24 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     'POST /api/chat': async (req, res) => {
       const body = await readJson(req);
       const text = typeof body?.text === 'string' ? body.text.trim() : '';
-      if (!text || text.length > MAX_TEXT) return sendJson(res, 400, { error: `Нужен текст до ${MAX_TEXT} символов` });
+      const images = body?.images ?? [];
+      if (!Array.isArray(images) || images.length > MAX_IMAGES
+        || !images.every(id => typeof id === 'string' && UPLOAD_ID.test(id) && existsSync(join(uploadsDir, id)))) {
+        return sendJson(res, 400, { error: `Картинки: до ${MAX_IMAGES} загруженных` });
+      }
+      if ((!text && !images.length) || text.length > MAX_TEXT) return sendJson(res, 400, { error: `Нужен текст до ${MAX_TEXT} символов или картинка` });
       if (chat.busy()) return sendJson(res, 409, { error: 'Планировщик ещё отвечает' });
       pending = '';
       const active = effectiveConfig(cfg);
-      const extra = mentionContext(text, listProjects(active), { ...active, status: loadState(cfg.stateDir).status });
+      const mentions = mentionContext(text, listProjects(active), { ...active, status: loadState(cfg.stateDir).status });
+      const attachments = images.length
+        ? ['Вложения (открой инструментом Read):', ...images.map(id => `- ${join(uploadsDir, id)}`)].join('\n')
+        : null;
+      const extra = [mentions, attachments].filter(Boolean).join('\n\n') || null;
       const done = chat.send(text, event => {
         if (event.type === 'delta') pending += event.text;
         broadcast(event);
-      }, { extra });
+      }, { extra, images });
       broadcast({ type: 'busy', busy: true, text: '' });
       done.catch(() => {}).finally(() => {
         pending = '';
@@ -90,11 +106,26 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       req.on('close', () => { clearInterval(beat); clients.delete(res); });
     },
 
+    'POST /api/upload': async (req, res) => {
+      const ext = IMAGE_TYPES[(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()];
+      const body = await readBody(req, MAX_UPLOAD);
+      if (!ext) return sendJson(res, 400, { error: 'Только картинки: JPEG, PNG, WebP, GIF' });
+      if (!body) return sendJson(res, 413, { error: `Картинка больше ${MAX_UPLOAD / 1024 / 1024} МБ` });
+      if (!body.length) return sendJson(res, 400, { error: 'Пустой файл' });
+      const id = `${randomUUID()}.${ext}`;
+      mkdirSync(uploadsDir, { recursive: true });
+      writeFileSync(join(uploadsDir, id), body);
+      pruneUploads(uploadsDir, KEEP_UPLOADS);
+      sendJson(res, 200, { id });
+    },
+
     'POST /api/stop': (req, res) => { chat.stop(); sendJson(res, 200, { ok: true }); },
 
     'POST /api/reset': (req, res) => {
       if (chat.busy()) return sendJson(res, 409, { error: 'Сначала остановите ответ' });
       chat.reset();
+      rmSync(uploadsDir, { recursive: true, force: true });
+      mkdirSync(uploadsDir, { recursive: true });
       sendJson(res, 200, { ok: true });
     },
 
@@ -154,10 +185,19 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     },
   };
 
+  // Only server-made names: no path from the request reaches the disk.
+  const serveUpload = (req, res) => {
+    const id = new URL(req.url, 'http://x').pathname.slice('/uploads/'.length);
+    if (!UPLOAD_ID.test(id)) return sendJson(res, 404, { error: 'Не найдено' });
+    const ext = id.split('.').pop();
+    const type = Object.keys(IMAGE_TYPES).find(t => IMAGE_TYPES[t] === ext);
+    sendFile(res, join(uploadsDir, id), type, 'private, max-age=31536000, immutable');
+  };
+
   const server = createServer(async (req, res) => {
     let path;
     try { path = new URL(req.url, 'http://x').pathname; } catch { return sendJson(res, 400, { error: 'Неверный адрес' }); }
-    const route = routes[`${req.method} ${path}`];
+    const route = req.method === 'GET' && path.startsWith('/uploads/') ? serveUpload : routes[`${req.method} ${path}`];
     if (!route) return sendJson(res, 404, { error: 'Не найдено' });
     try {
       await route(req, res);
@@ -203,15 +243,35 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function sendFile(res, path, type) {
+function sendFile(res, path, type, cache = 'no-cache') {
   let body;
   try { body = readFileSync(path); } catch { return sendJson(res, 404, { error: 'Не найдено' }); }
-  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache });
   res.end(body);
 }
 
 function badRequest(message) {
   return Object.assign(new Error(message), { status: 400 });
+}
+
+// The whole body, or null past `limit` (the rest is drained so the client still reads the answer).
+async function readBody(req, limit) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size <= limit) chunks.push(chunk);
+  }
+  return size > limit ? null : Buffer.concat(chunks);
+}
+
+// Keeps the `keep` newest uploads.
+function pruneUploads(dir, keep) {
+  const files = readdirSync(dir).flatMap(name => {
+    try { return [{ name, mtime: statSync(join(dir, name)).mtimeMs }]; } catch { return []; }
+  });
+  files.sort((a, b) => b.mtime - a.mtime);
+  for (const { name } of files.slice(keep)) rmSync(join(dir, name), { force: true });
 }
 
 async function readJson(req) {

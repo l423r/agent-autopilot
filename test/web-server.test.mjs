@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, readdirSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -417,6 +417,105 @@ test('the real panel page: three tabs, relative markdown.mjs, no absolute /api p
   assert.match(html, /<link rel="icon" href="data:/);
   // parsePlan's phase is already "Этап N": prefixing it again shows "Этап Этап 1".
   assert.doesNotMatch(html, /`Этап \$\{/);
+});
+
+// A tiny but real PNG header plus filler: the server checks the Content-Type, not the pixels.
+const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('картинка')]);
+const upload = (body, type = 'image/png') => fetch(base + '/api/upload', { method: 'POST', headers: { 'Content-Type': type }, body });
+const rawGet = path => new Promise((ok, fail) => {
+  const sock = connect(srv.port, '127.0.0.1', () => sock.write(`GET ${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`));
+  let data = '';
+  sock.on('data', c => { data += c; });
+  sock.on('end', () => ok(data));
+  sock.on('error', fail);
+});
+
+test('upload: PNG → id, GET /uploads/<id> отдаёт те же байты; не картинка → 400; 9 МБ → 413', async () => {
+  await start();
+  const r = await upload(PNG);
+  assert.equal(r.status, 200);
+  const { id } = await json(r);
+  assert.match(id, /^[0-9a-f-]{36}\.png$/);
+  const img = await get(`/uploads/${id}`);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG);
+  assert.equal((await upload(PNG, 'image/jpeg; charset=binary')).status, 200);
+  assert.equal((await upload('hello', 'text/plain')).status, 400);
+  assert.equal((await upload(PNG, 'image/svg+xml')).status, 400);
+  assert.equal((await upload(Buffer.alloc(9 * 1024 * 1024))).status, 413);
+});
+
+test('upload: чужие пути и расширения в /uploads → 404', async () => {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(cfg.stateDir, 'state.json'), '{"status":"idle"}');
+  await start();
+  assert.match(await rawGet('/uploads/../state.json'), /^HTTP\/1\.1 404/);
+  for (const path of [
+    '/uploads/..%2Fstate.json',
+    '/uploads/abc.exe',
+    `/uploads/${'0'.repeat(36)}.exe`,
+    `/uploads/${'0'.repeat(36)}.png`,
+    '/uploads/',
+  ]) assert.equal((await get(path)).status, 404, path);
+});
+
+test('chat с картинкой без текста: путь в -p, images в истории; 6 картинок или чужой id → 400', async () => {
+  const argvFile = join(root, 'argv.json');
+  process.env.FAKE_ARGV = argvFile;
+  await start();
+  const ids = [];
+  for (let i = 0; i < 6; i++) ids.push((await json(await upload(PNG))).id);
+  assert.equal((await post('/api/chat', { images: ids })).status, 400);
+  assert.equal((await post('/api/chat', { images: [`${'0'.repeat(8)}-0000-0000-0000-${'0'.repeat(12)}.png`] })).status, 400);
+  assert.equal((await post('/api/chat', { images: ['../state.json'] })).status, 400);
+  assert.equal((await post('/api/chat', { images: 'x' })).status, 400);
+  assert.equal((await post('/api/chat', { images: [] })).status, 400);
+  assert.equal((await post('/api/chat', { images: [ids[0]] })).status, 202);
+  await idle();
+  const argv = JSON.parse(readFileSync(argvFile, 'utf8'));
+  assert.equal(argv[argv.indexOf('-p') + 1], `Вложения (открой инструментом Read):\n- ${join(cfg.stateDir, 'web', 'uploads', ids[0])}`);
+  const h = await json(await get('/api/history'));
+  assert.equal(h.entries[0].role, 'user');
+  assert.equal(h.entries[0].text, '');
+  assert.deepEqual(h.entries[0].images, [ids[0]]);
+});
+
+test('chat: текст, @проект и картинки — всё в промпте, в истории текст и images', async () => {
+  withProjects({ active: ALPHA_B, status: 'idle' });
+  const argvFile = join(root, 'argv.json');
+  process.env.FAKE_ARGV = argvFile;
+  await start();
+  const a = (await json(await upload(PNG))).id;
+  const b = (await json(await upload(PNG, 'image/webp'))).id;
+  assert.equal((await post('/api/chat', { text: 'смотри @beta', images: [a, b] })).status, 202);
+  await idle();
+  const argv = JSON.parse(readFileSync(argvFile, 'utf8'));
+  const dir = join(cfg.stateDir, 'web', 'uploads');
+  assert.equal(argv[argv.indexOf('-p') + 1], `смотри @beta\n\n[Проекты из сообщения]\n- @beta: projectDir=${join(FIX, 'beta')}, план=plans/other.md, прогресс=plans/other.progress.md, автопилот: не активен\n\nВложения (открой инструментом Read):\n- ${join(dir, a)}\n- ${join(dir, b)}`);
+  const h = await json(await get('/api/history'));
+  assert.equal(h.entries[0].text, 'смотри @beta');
+  assert.deepEqual(h.entries[0].images, [a, b]);
+});
+
+test('uploads: хранятся последние 200, reset очищает папку', async () => {
+  await start();
+  const dir = join(cfg.stateDir, 'web', 'uploads');
+  const first = (await json(await upload(PNG))).id;
+  mkdirSync(dir, { recursive: true });
+  // Older files than the real upload, so pruning drops these and the first upload survives the cut.
+  const old = new Date(Date.now() - 3600_000);
+  for (let i = 0; i < 205; i++) {
+    const f = join(dir, `${String(i).padStart(8, '0')}-0000-0000-0000-000000000000.png`);
+    writeFileSync(f, 'x');
+    utimesSync(f, old, old);
+  }
+  await upload(PNG);
+  assert.equal(readdirSync(dir).length, 200);
+  assert.ok(existsSync(join(dir, first)));
+  assert.equal((await post('/api/reset')).status, 200);
+  assert.deepEqual(readdirSync(dir), []);
+  assert.equal((await get(`/uploads/${first}`)).status, 404);
 });
 
 test('a malformed request URL gets 400 and does not bring the server down', async () => {

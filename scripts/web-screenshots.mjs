@@ -129,6 +129,44 @@ try {
   const marks = await page.evaluate(() => [...document.querySelectorAll('.msg.user')].at(-1).querySelectorAll('.mention').length);
   if (marks !== 1) fail(`в сообщении подсвечено упоминаний: ${marks}, нужно 1`);
 
+  // 📎: a big picture is shrunk to 2000 px JPEG, uploaded, shown above the field; it can go without text.
+  const bigPng = await page.evaluate(async () => {
+    const c = Object.assign(document.createElement('canvas'), { width: 3000, height: 1600 });
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 3000, 1600);
+    grad.addColorStop(0, '#7b3cff');
+    grad.addColorStop(1, '#3ecf8e');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 3000, 1600);
+    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  });
+  const file = { name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from(bigPng, 'base64') };
+  await page.setInputFiles('#file-input', [file, file]);
+  await page.waitForFunction(() => document.querySelectorAll('#pending .thumb').length === 2 && !document.querySelector('#pending .thumb.loading'));
+  await page.click('#pending .thumb .x');
+  if ((await page.$$('#pending .thumb')).length !== 1) fail('✕ не убрал миниатюру');
+  await page.fill('#input', '');
+  if (await page.isDisabled('#send-btn')) fail('«Отправить» неактивна при картинке без текста');
+  await shot('chat-image-pending');
+  await page.click('#send-btn');
+  await page.waitForSelector('#send-btn:not(.hidden)', { timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 3, null, { timeout: 15_000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.msg.user')].at(-1).querySelector('.imgs img')?.complete);
+  const sentImg = await page.evaluate(async () => {
+    const img = [...document.querySelectorAll('.msg.user')].at(-1).querySelector('.imgs img');
+    const bmp = await createImageBitmap(await (await fetch(img.src)).blob());
+    return { href: img.parentElement.getAttribute('href'), target: img.parentElement.target, w: bmp.width, h: bmp.height, pending: document.querySelectorAll('#pending .thumb').length };
+  });
+  if (!/^uploads\/[0-9a-f-]{36}\.jpg$/.test(sentImg.href) || sentImg.target !== '_blank') fail(`ссылка на картинку: ${JSON.stringify(sentImg)}`);
+  if (Math.max(sentImg.w, sentImg.h) !== 2000) fail(`картинка не уменьшена до 2000 px: ${sentImg.w}×${sentImg.h}`);
+  if (sentImg.pending) fail('миниатюры над полем не очистились после отправки');
+  await page.evaluate(() => { const s = document.getElementById('chat-scroll'); s.scrollTop = s.scrollHeight; });
+  await shot('chat-image-sent');
+
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
   await shot('plan-projects');

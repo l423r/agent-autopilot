@@ -38,8 +38,8 @@ export function createChat({
     });
   }
 
-  function append(role, text) {
-    appendFileSync(historyFile, JSON.stringify({ role, text, at: new Date().toISOString() }) + '\n');
+  function append(role, text, fields = {}) {
+    appendFileSync(historyFile, JSON.stringify({ role, text, ...fields, at: new Date().toISOString() }) + '\n');
     const entries = history();
     if (entries.length > HISTORY_LIMIT) {
       writeFileSync(historyFile, entries.slice(-HISTORY_LIMIT).map(e => JSON.stringify(e)).join('\n') + '\n');
@@ -52,25 +52,25 @@ export function createChat({
     append('error', INTERRUPTED);
   }
 
-  // `extra` goes to the planner after the text but not into history.
-  async function send(text, onEvent, { extra } = {}) {
+  // `extra` goes to the planner after the text but not into history; `images` (upload ids) go into history.
+  async function send(text, onEvent, { extra, images } = {}) {
     if (running) throw new Error('busy');
     running = true;
     stopped = false;
     try {
-      await answer(text, onEvent, extra);
+      await answer(text, onEvent, extra, images);
     } finally {
       running = false;
     }
   }
 
-  async function answer(text, onEvent, extra) {
+  async function answer(text, onEvent, extra, images) {
     const emit = event => { try { onEvent(event); } catch { /* listener gone; the answer is still saved */ } };
-    append('user', text);
+    append('user', text, images?.length ? { images } : {});
 
     const sessionId = readSession();
     const args = [
-      '-p', extra ? `${text}\n\n${extra}` : text,
+      '-p', [text, extra].filter(Boolean).join('\n\n'),
       '--output-format', 'stream-json', '--verbose',
       '--permission-mode', 'dontAsk',
       '--settings', join(cfg.autopilotDir, 'claude-settings.json'),
