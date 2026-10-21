@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 // Stand-in for the `claude` binary in tests. Behaviour is chosen by FAKE_MODE.
-const mode = process.env.FAKE_MODE ?? 'ok';
+let mode = process.env.FAKE_MODE ?? 'ok';
 const result = (isError, text) => console.log(JSON.stringify({ type: 'result', is_error: isError, result: text }));
+
+// `slow`: a long iteration — waits 2 s, then behaves like `tick`.
+if (mode === 'slow') {
+  await new Promise(r => setTimeout(r, 2000));
+  mode = 'tick';
+}
 
 if (mode === 'ok') {
   result(false, 'done');

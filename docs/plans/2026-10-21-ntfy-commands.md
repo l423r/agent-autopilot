@@ -116,18 +116,18 @@
 - Consumes: Task 1–3.
 - Produces: при `ntfyCommands: true` демон в `run` запускает `subscribeCommands`; очередь команд; флаг `busy` на время `runIteration`; `pauseAfterTask` в памяти процесса.
 
-- [ ] **Step 1: CLI-тесты** (поддельный ntfy принимает публикации и отдаёт поток команд):
+- [x] **Step 1: CLI-тесты** (поддельный ntfy принимает публикации и отдаёт поток команд):
   - `status` во время итерации (FAKE_MODE `hang` с коротким тайм-аутом не годится — добавить в fake-claude режим `slow`: ждёт 2 с, затем как `tick`) → ответное уведомление приходит до конца итерации, `state.json` подписчиком не тронут;
   - `pause` во время итерации → итерация доходит до конца, затем статус `paused`, следующая задача не запускается;
   - автопилот в `halted` с `ntfyCommands` не выходит; `resume` → задача снова запускается;
   - `sleeping` после лимита + `resume` → запуск без ожидания `nextAttemptAt`;
   - перезапуск демона при уже обработанной команде в кэше сервера → она не выполняется второй раз;
   - без `ntfyCommands` остановленный демон завершается как раньше (существующие тесты зелёные).
-- [ ] **Step 2:** `npm test` → FAIL
-- [ ] **Step 3:** Реализовать в `autopilot.mjs`; ожидание команд в остановленном/спящем состоянии — тем же циклом с шагом ≤1 с, просыпаясь по новой команде.
-- [ ] **Step 4:** README: раздел «Управление с телефона» (команды, кнопки, ключи `ntfyCommands`/`ntfyCommandToken`, права на сервере ntfy); `config.example.json`: `"ntfyCommands": false`, `"ntfyCommandToken": ""`.
-- [ ] **Step 5:** `npm test` → PASS все
-- [ ] **Step 6: Commit** — `git commit -m "feat(autopilot): phone commands in the daemon"`
+- [x] **Step 2:** `npm test` → FAIL
+- [x] **Step 3:** Реализовать в `autopilot.mjs`; ожидание команд в остановленном/спящем состоянии — тем же циклом с шагом ≤1 с, просыпаясь по новой команде.
+- [x] **Step 4:** README: раздел «Управление с телефона» (команды, кнопки, ключи `ntfyCommands`/`ntfyCommandToken`, права на сервере ntfy); `config.example.json`: `"ntfyCommands": false`, `"ntfyCommandToken": ""`.
+- [x] **Step 5:** `npm test` → PASS все
+- [x] **Step 6: Commit** — `git commit -m "feat(autopilot): phone commands in the daemon"`
 
 ## Этап 3. Проверка и ревью
 
