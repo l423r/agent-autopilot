@@ -66,8 +66,8 @@
 
 ### Task 6: Финальный артефакт — выкладка пульта
 
-- [ ] **Step 1:** `GET 127.0.0.1:7690/api/history` → `busy: false`, затем `systemctl restart agent-autopilot-web`; `systemctl is-active` → `active`; `/api/projects` → 2 проекта без `error`.
-- [ ] **Step 2:** Итог в журнал: что сделано, коммиты, отложенное. Службу `agent-autopilot` не трогать — Task 7.
+- [x] **Step 1:** `GET 127.0.0.1:7690/api/history` → `busy: false`, затем `systemctl restart agent-autopilot-web`; `systemctl is-active` → `active`; `/api/projects` → 2 проекта без `error`.
+- [x] **Step 2:** Итог в журнал: что сделано, коммиты, отложенное. Службу `agent-autopilot` не трогать — Task 7.
 
 ### Task 7: [manual] Перезапуск демона и проверка
 
