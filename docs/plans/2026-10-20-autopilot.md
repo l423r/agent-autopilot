@@ -74,7 +74,7 @@
 
 Правила разбора: задача — заголовок `### Task <N>: <title>`; `id` = `"Task <N>"`. Этап — ближайший выше заголовок `## Этап <...>` (иначе `null`). `manual` — в заголовке задачи есть `[manual]`. `done` — у задачи есть хотя бы один чекбокс и все её `- [ ]`/`- [x]` отмечены. Задача без чекбоксов — `done: true`. `lastInPhase` — следующая задача в другом этапе или её нет.
 
-- [ ] **Step 1: Фикстура и падающие тесты**
+- [x] **Step 1: Фикстура и падающие тесты**
 
 `fixtures/plan-sample.md`: два этапа; «Этап 1» — Task 1 (все `[x]`), Task 2 (один `[ ]`); «Этап 2» — `### Task 3: EAS [manual]` (`[ ]`), Task 4 (`[ ]`).
 
@@ -96,10 +96,10 @@ test('checkboxes in fenced code blocks are ignored', () => {
 });
 ```
 
-- [ ] **Step 2: `node --test` → FAIL (модуль не найден)**
-- [ ] **Step 3: Реализовать `lib/plan.mjs`** (построчный разбор, флаг «внутри ```»)
-- [ ] **Step 4: `node --test` → PASS**
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): plan parser"`
+- [x] **Step 2: `node --test` → FAIL (модуль не найден)**
+- [x] **Step 3: Реализовать `lib/plan.mjs`** (построчный разбор, флаг «внутри ```»)
+- [x] **Step 4: `node --test` → PASS**
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): plan parser"`
 
 ---
 
@@ -133,7 +133,7 @@ test('checkboxes in fenced code blocks are ignored', () => {
 
 `parseResetTime` понимает: (а) `...|<unix секунды>` (старый формат «Claude AI usage limit reached|1760000000»); (б) «resets 3pm», «resets at 15:00», «resets 3:30am (Europe/Moscow)» — ближайшее будущее такое время; часовой пояс в скобках учитывается через `Intl`, без него — локальное время сервера; (в) «resets Oct 22, 9am» / «resets Oct 22 at 09:00» — дата+время. Точный формат на 2.1.304 не проверен — поэтому шаблоны в конфиге и терпимый разбор.
 
-- [ ] **Step 1: Падающие тесты** (`now = new Date('2026-10-20T12:00:00Z')`, `TZ=UTC` в скрипте теста)
+- [x] **Step 1: Падающие тесты** (`now = new Date('2026-10-20T12:00:00Z')`, `TZ=UTC` в скрипте теста)
 
 ```js
 test('epoch format', () => assert.equal(parseResetTime('Claude AI usage limit reached|1792512000', now).getTime(), 1792512000*1000));
@@ -149,10 +149,10 @@ test('timeout', () => assert.equal(classify({exitCode:null, output:'', timedOut:
 test('ok', () => assert.equal(classify({exitCode:0, output:'{"result":"done"}', timedOut:false}, now, cfg).kind, 'ok'));
 ```
 
-- [ ] **Step 2: `TZ=UTC node --test` → FAIL**
-- [ ] **Step 3: Реализовать `lib/classify.mjs`**; в `package.json` `"test": "TZ=UTC node --test"`
-- [ ] **Step 4: `npm test` → PASS**
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): classify claude results and parse reset time"`
+- [x] **Step 2: `TZ=UTC node --test` → FAIL**
+- [x] **Step 3: Реализовать `lib/classify.mjs`**; в `package.json` `"test": "TZ=UTC node --test"`
+- [x] **Step 4: `npm test` → PASS**
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): classify claude results and parse reset time"`
 
 ---
 
@@ -184,7 +184,7 @@ test('ok', () => assert.equal(classify({exitCode:0, output:'{"result":"done"}', 
 - `auth` → `auth`, reason из вывода.
 - `ok|error|timeout` без галочек → `attempts[id] += 1`, `idle`.
 
-- [ ] **Step 1: Падающие тесты**
+- [x] **Step 1: Падающие тесты**
 
 ```js
 test('limit sleeps until resetAt and does not count attempt', ...)  // status 'sleeping', nextAttemptAt === resetAt, attempts['Task 2'] undefined
@@ -198,10 +198,10 @@ test('resume after done re-runs when plan gained new task', ...)    // resume(do
 test('state roundtrip and missing file → idle', ...)
 ```
 
-- [ ] **Step 2: `npm test` → FAIL**
-- [ ] **Step 3: Реализовать `lib/decide.mjs`, `lib/state.mjs`**
-- [ ] **Step 4: `npm test` → PASS**
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): decision logic and state store"`
+- [x] **Step 2: `npm test` → FAIL**
+- [x] **Step 3: Реализовать `lib/decide.mjs`, `lib/state.mjs`**
+- [x] **Step 4: `npm test` → PASS**
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): decision logic and state store"`
 
 ---
 
@@ -225,7 +225,7 @@ test('state roundtrip and missing file → idle', ...)
 
 `fake-claude.mjs`: читает переменную `FAKE_MODE` (`ok` | `limit` | `hang`), печатает соответствующий вывод/висит.
 
-- [ ] **Step 1: Падающие тесты**
+- [x] **Step 1: Падающие тесты**
 
 ```js
 test('buildPrompt substitutes placeholders', ...)  // содержит 'Task 2' и путь плана
@@ -234,10 +234,10 @@ test('timeout kills process', ...)                 // FAKE_MODE=hang, timeoutMs 
 test('killOrphan kills leftover child', ...)       // запустить fake hang вручную, записать его pid в child.pid → killOrphan → процесс мёртв, файла нет
 ```
 
-- [ ] **Step 2: `npm test` → FAIL**
-- [ ] **Step 3: Реализовать `lib/runner.mjs`, `prompt.md`, `claude-settings.json`, `fake-claude.mjs`**
-- [ ] **Step 4: `npm test` → PASS**
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): iteration runner"`
+- [x] **Step 2: `npm test` → FAIL**
+- [x] **Step 3: Реализовать `lib/runner.mjs`, `prompt.md`, `claude-settings.json`, `fake-claude.mjs`**
+- [x] **Step 4: `npm test` → PASS**
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): iteration runner"`
 
 ---
 
@@ -258,7 +258,7 @@ test('killOrphan kills leftover child', ...)       // запустить fake ha
 Lock: `state/daemon.lock` с pid; если pid жив — вывести «Автопилот уже работает (pid N)» и exit 0; мёртвый — перехватить.
 Сводный журнал: `logs/autopilot.log`, одна строка на событие (`<ISO> run Task 3`, `<ISO> limit → sleep until ...`, `<ISO> halted: ...`).
 
-- [ ] **Step 1: Падающие тесты** (временная папка: копия `plan-sample.md` с Task 3 без `[manual]`, конфиг с путями туда, `AUTOPILOT_CLAUDE=fake-claude.mjs`)
+- [x] **Step 1: Падающие тесты** (временная папка: копия `plan-sample.md` с Task 3 без `[manual]`, конфиг с путями туда, `AUTOPILOT_CLAUDE=fake-claude.mjs`)
 
 ```js
 test('once with FAKE_MODE=limit → status sleeping', ...)
@@ -270,10 +270,10 @@ test('status prints APK line', ...)                   // progress содержи
 
 (добавить `FAKE_MODE=tick` в `fake-claude.mjs`)
 
-- [ ] **Step 2: `npm test` → FAIL**
-- [ ] **Step 3: Реализовать `autopilot.mjs`** (конфиг: `AUTOPILOT_CONFIG` или `<папка скрипта>/config.json`)
-- [ ] **Step 4: `npm test` → PASS**
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): daemon loop and CLI"`
+- [x] **Step 2: `npm test` → FAIL**
+- [x] **Step 3: Реализовать `autopilot.mjs`** (конфиг: `AUTOPILOT_CONFIG` или `<папка скрипта>/config.json`)
+- [x] **Step 4: `npm test` → PASS**
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): daemon loop and CLI"`
 
 ---
 
@@ -286,7 +286,7 @@ test('status prints APK line', ...)                   // progress содержи
 `install.sh`: копирует юнит в `/etc/systemd/system/`, `daemon-reload`, `enable` (без `start`).
 `README.md` (по-русски): установка, `status`/`resume`, где логи, как включить паузы, что делать при `auth`/`halted`/`waiting-user`.
 
-- [ ] **Step 1: Создать файлы, `bash install.sh`; `systemctl is-enabled agent-autopilot` → `enabled`**
-- [ ] **Step 2: Commit** — `git commit -m "feat(autopilot): systemd service and docs"`
-- [ ] **Step 3: Боевая проверка (выполняет заказчик или Claude с явного разрешения заказчика)** — `node /root/agent-autopilot/autopilot.mjs once` на плане приложения: проверить, что `claude -p` под root с `--permission-mode dontAsk` реально работает и выполняет Task 1 приложения (галочки + коммит). Если разрешений не хватает — поправить `claude-settings.json` и повторить. Записать в `README.md` фактический вид сообщения о лимите, когда он впервые встретится в `logs/`.
-- [ ] **Step 4: `systemctl start agent-autopilot`; `node /root/agent-autopilot/autopilot.mjs status` → `running`**
+- [x] **Step 1: Создать файлы, `bash install.sh`; `systemctl is-enabled agent-autopilot` → `enabled`**
+- [x] **Step 2: Commit** — `git commit -m "feat(autopilot): systemd service and docs"`
+- [x] **Step 3: Боевая проверка (выполняет заказчик или Claude с явного разрешения заказчика)** — `node /root/agent-autopilot/autopilot.mjs once` на плане приложения: проверить, что `claude -p` под root с `--permission-mode dontAsk` реально работает и выполняет Task 1 приложения (галочки + коммит). Если разрешений не хватает — поправить `claude-settings.json` и повторить. Записать в `README.md` фактический вид сообщения о лимите, когда он впервые встретится в `logs/`.
+- [x] **Step 4: `systemctl start agent-autopilot`; `node /root/agent-autopilot/autopilot.mjs status` → `running`**
