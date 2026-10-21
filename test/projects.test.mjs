@@ -1,0 +1,118 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  listProjects, progressPathFor, listPlans, findPlan, effectiveConfig, requestSwitch, takeSwitch, applySwitch,
+} from '../lib/projects.mjs';
+import { loadState, saveState } from '../lib/state.mjs';
+
+const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'projects');
+const ALPHA = join(FIX, 'alpha');
+const BETA = join(FIX, 'beta');
+
+const cfgWithProjects = stateDir => ({
+  stateDir,
+  projectDir: ALPHA,
+  planPath: 'plans/2026-02-b.md',
+  progressPath: 'plans/journal.md',
+  projects: [
+    { name: 'alpha', projectDir: ALPHA, plansDir: 'plans', progressPath: 'plans/journal.md' },
+    { name: 'beta', projectDir: BETA, plansDir: 'plans' },
+  ],
+});
+
+test('listProjects без projects → один проект из старых полей', () => {
+  const cfg = { projectDir: '/root/sigaret-counter', planPath: 'docs/superpowers/plans/x.md', progressPath: 'docs/superpowers/progress.md' };
+  assert.deepEqual(listProjects(cfg), [
+    { name: 'sigaret-counter', projectDir: '/root/sigaret-counter', plansDir: 'docs/superpowers/plans', progressPath: 'docs/superpowers/progress.md' },
+  ]);
+});
+
+test('listProjects с projects → name по умолчанию из папки', () => {
+  const cfg = { projects: [{ projectDir: '/root/agent-autopilot', plansDir: 'docs/plans' }, { name: 'sig', projectDir: '/root/sigaret-counter', plansDir: 'p' }] };
+  assert.deepEqual(listProjects(cfg).map(p => p.name), ['agent-autopilot', 'sig']);
+});
+
+test('progressPathFor: progressPath проекта или <план>.progress.md', () => {
+  assert.equal(progressPathFor({ progressPath: 'docs/progress.md' }, 'docs/plans/a.md'), 'docs/progress.md');
+  assert.equal(progressPathFor({}, 'docs/plans/a.md'), 'docs/plans/a.progress.md');
+});
+
+test('listPlans пропускает *.progress.md, progressPath, подпапки и не-.md; считает прогресс', () => {
+  const [alpha, beta] = listProjects(cfgWithProjects('/nonexistent'));
+  const plans = listPlans(alpha);
+  assert.deepEqual(plans.map(p => p.planPath), ['plans/2026-03-empty.md', 'plans/2026-02-b.md', 'plans/2026-01-a.md']);
+  const [empty, b, a] = plans;
+  assert.deepEqual(empty, { planPath: 'plans/2026-03-empty.md', progressPath: 'plans/journal.md', done: 0, total: 0, finished: false });
+  assert.deepEqual(b, { planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md', done: 1, total: 3, finished: false });
+  assert.equal(a.finished, true);
+  assert.deepEqual(listPlans(beta), [{ planPath: 'plans/other.md', progressPath: 'plans/other.progress.md', done: 0, total: 1, finished: false }]);
+});
+
+test('listPlans: нет папки → пустой список', () => {
+  assert.deepEqual(listPlans({ name: 'x', projectDir: '/nonexistent', plansDir: 'plans' }), []);
+});
+
+test('findPlan: найденный план и защита от чужих путей', () => {
+  const cfg = cfgWithProjects('/nonexistent');
+  const hit = findPlan(cfg, 'alpha', 'plans/2026-02-b.md');
+  assert.equal(hit.project.name, 'alpha');
+  assert.equal(hit.plan.total, 3);
+  assert.equal(findPlan(cfg, 'alpha', '../../../../etc/passwd'), null);
+  assert.equal(findPlan(cfg, 'alpha', 'plans/../../beta/plans/other.md'), null);
+  assert.equal(findPlan(cfg, 'alpha', join(ALPHA, 'plans/2026-02-b.md')), null);
+  assert.equal(findPlan(cfg, 'alpha', 'plans/other.md'), null);
+  assert.equal(findPlan(cfg, 'alpha', 'plans/2026-02-b.progress.md'), null);
+  assert.equal(findPlan(cfg, 'alpha', 'plans/journal.md'), null);
+  assert.equal(findPlan(cfg, 'nobody', 'plans/other.md'), null);
+  assert.equal(findPlan(cfg, 'beta', 'plans/other.md').project.name, 'beta');
+});
+
+test('effectiveConfig: без active.json — исходные пути, с ним — новые', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  const cfg = cfgWithProjects(dir);
+  const same = effectiveConfig(cfg);
+  assert.deepEqual(same, cfg);
+  assert.notEqual(same, cfg);
+
+  writeFileSync(join(dir, 'active.json'), JSON.stringify({ projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' }));
+  const eff = effectiveConfig(cfg);
+  assert.equal(eff.projectDir, BETA);
+  assert.equal(eff.planPath, 'plans/other.md');
+  assert.equal(eff.progressPath, 'plans/other.progress.md');
+  assert.equal(eff.stateDir, dir);
+  assert.equal(cfg.projectDir, ALPHA, 'исходный cfg не меняется');
+
+  writeFileSync(join(dir, 'active.json'), '{ broken');
+  assert.equal(effectiveConfig(cfg).projectDir, ALPHA, 'нечитаемый active.json игнорируется');
+});
+
+test('requestSwitch дважды → takeSwitch отдаёт второй, повторный → null', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  assert.equal(takeSwitch(dir), null);
+  requestSwitch(dir, { projectDir: ALPHA, planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md' });
+  requestSwitch(dir, { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' });
+  assert.deepEqual(takeSwitch(dir), { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' });
+  assert.equal(takeSwitch(dir), null);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test('applySwitch пишет active.json и сбрасывает состояние', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  saveState(dir, { status: 'halted', currentTask: 'Task 2', attempts: { 'Task 2': 3 }, nextAttemptAt: '2026-10-21T10:00:00.000Z', reason: 'x', updatedAt: null });
+  const target = { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
+  applySwitch(dir, target);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'active.json'), 'utf8')), target);
+  const s = loadState(dir);
+  assert.equal(s.status, 'idle');
+  assert.deepEqual(s.attempts, {});
+  assert.equal(s.currentTask, null);
+  assert.equal(s.nextAttemptAt, null);
+  assert.equal(s.reason, 'Переключено на other.md');
+  assert.ok(!Number.isNaN(Date.parse(s.updatedAt)));
+  assert.deepEqual(readdirSync(dir).sort(), ['active.json', 'state.json']);
+  assert.equal(effectiveConfig({ stateDir: dir, projectDir: ALPHA, planPath: 'a.md' }).planPath, 'plans/other.md');
+});
