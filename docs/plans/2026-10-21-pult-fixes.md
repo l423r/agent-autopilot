@@ -55,8 +55,8 @@
 
 ### Task 4: Проверка результата
 
-- [ ] **Step 1:** `npm test` дважды подряд → PASS, число каталогов тестов в `/tmp` не растёт; `node scripts/web-screenshots.mjs` → OK, снимок вкладки «План» просмотрен (Read).
-- [ ] **Step 2:** Итог в журнал. **Commit** (если были правки) — `test: fixes visual check`
+- [x] **Step 1:** `npm test` дважды подряд → PASS, число каталогов тестов в `/tmp` не растёт; `node scripts/web-screenshots.mjs` → OK, снимок вкладки «План» просмотрен (Read).
+- [x] **Step 2:** Итог в журнал. **Commit** (если были правки) — `test: fixes visual check`
 
 ### Task 5: Ревью кода свежим ревьюером
 

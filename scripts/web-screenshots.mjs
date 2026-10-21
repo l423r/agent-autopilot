@@ -3,7 +3,7 @@
 // and saves docs/screenshots/web-<screen>.png. Fails on a console error, horizontal scrolling or script injection.
 // Usage: node scripts/web-screenshots.mjs [planFile]   (default: the sigaret-counter plan)
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,9 +36,12 @@ mkdirSync(join(projectDir, 'plans'), { recursive: true });
 copyFileSync(PLAN, join(projectDir, 'plans', basename(PLAN)));
 const otherDir = join(work, 'autopilot');
 mkdirSync(join(otherDir, 'plans'), { recursive: true });
-for (const name of ['2026-10-21-web-panel.md', '2026-10-21-pult-v2.md']) {
-  copyFileSync(join(ROOT, 'docs', 'plans', name), join(otherDir, 'plans', name));
-}
+copyFileSync(join(ROOT, 'docs', 'plans', '2026-10-21-web-panel.md'), join(otherDir, 'plans', '2026-10-21-web-panel.md'));
+// The repo's plans all get finished; untick the last step so one stays unfinished whatever their state.
+const v2 = readFileSync(join(ROOT, 'docs', 'plans', '2026-10-21-pult-v2.md'), 'utf8');
+const lastTick = v2.lastIndexOf('- [x]');
+writeFileSync(join(otherDir, 'plans', '2026-10-21-pult-v2.md'),
+  lastTick < 0 ? v2 : `${v2.slice(0, lastTick)}- [ ]${v2.slice(lastTick + 5)}`);
 const stateDir = join(work, 'state');
 mkdirSync(stateDir);
 writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ status: 'running', currentTask: 'Task 7' }));
