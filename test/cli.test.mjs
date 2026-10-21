@@ -153,3 +153,51 @@ test('an unfinished task is not pushed', async () => {
   await exec(g.root, ['once'], 'ok');
   assert.notEqual(g.remoteHead(), g.head());
 });
+
+test('ntfy: a notification per finished task and one when the plan is done', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp', notifyEachTask: true }));
+  await exec(root, ['run'], 'tick');
+  n.close();
+  const titles = n.got.map(g => g.params.title);
+  assert.equal(titles.filter(t => /Task 2|Task 3/.test(t)).length, 2, titles.join(' | '));
+  assert.equal(titles.filter(t => /готово/i.test(t)).length, 1, titles.join(' | '));
+  assert.match(n.got.at(-1).body, /3\/3/);
+});
+
+test('ntfy: a restart of an already stopped autopilot does not notify again', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp' }));
+  await exec(root, ['run'], 'tick');
+  const before = n.got.length;
+  await exec(root, ['run'], 'tick');
+  n.close();
+  assert.equal(before, 1);
+  assert.equal(n.got.length, 1);
+});
+
+test('ntfy: halting after repeated failures notifies once', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp' }));
+  await exec(root, ['run'], 'ok');
+  n.close();
+  assert.deepEqual(n.got.map(g => g.params.title).filter(t => /застрял/i.test(t)).length, 1);
+});
+
+test('ntfy: hitting a usage limit notifies with the resume time', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp' }));
+  await exec(root, ['once'], 'limit');
+  n.close();
+  assert.equal(n.got.length, 1);
+  assert.match(n.got[0].params.title, /лимит/i);
+  assert.match(n.got[0].body, /\d{2}:\d{2}/);
+});

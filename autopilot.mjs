@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Autopilot CLI: run | once | status | resume
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parsePlan, nextTask } from './lib/plan.mjs';
 import { classify } from './lib/classify.mjs';
-import { decide, applyResult, resume, markRunning } from './lib/decide.mjs';
+import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
+import { notify, stopMessage } from './lib/notify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -41,6 +42,21 @@ function pushProject(cfg, task) {
   logEvent(cfg, r.status === 0 ? `push ${task.id}: ок` : `push ${task.id}: не удался — ${detail}`);
 }
 
+async function send(cfg, msg) {
+  if (!cfg.ntfyTopic) return;
+  const ok = await notify(cfg, { ...msg, title: `${basename(cfg.projectDir)} · ${msg.title}` });
+  if (!ok) logEvent(cfg, `уведомление не отправлено: ${msg.title}`);
+}
+
+function withProgress(cfg, text) {
+  try {
+    const plan = readPlan(cfg);
+    return `${text}\nПрогресс: ${plan.tasks.filter(t => t.done).length}/${plan.tasks.length}`;
+  } catch {
+    return text;
+  }
+}
+
 // One decision + its action. Returns 'continue' | 'stop' | { sleepUntil: Date }.
 async function step(cfg) {
   const now = new Date();
@@ -50,6 +66,8 @@ async function step(cfg) {
   if (d.action === 'stop') {
     if (state.status !== d.status || state.reason !== d.reason) {
       saveState(cfg.stateDir, { ...state, status: d.status, reason: d.reason, updatedAt: now.toISOString() });
+      // A status set by applyResult (auth, paused) was already announced when it was saved.
+      if (state.status !== d.status) await send(cfg, stopMessage(d.status, withProgress(cfg, d.reason)));
     }
     logEvent(cfg, `${d.status}: ${d.reason}`);
     return 'stop';
@@ -77,7 +95,16 @@ async function step(cfg) {
   const next = applyResult(state, d.task, result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result, planAfter, finishedAt, cfg);
   saveState(cfg.stateDir, next);
   logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
-  if (cfg.pushAfterTask && planAfter.tasks.find(t => t.id === d.task.id)?.done) pushProject(cfg, d.task);
+  const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
+  if (cfg.pushAfterTask && finished) pushProject(cfg, d.task);
+  if (finished && cfg.notifyEachTask) {
+    await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, d.task.title), tags: 'heavy_check_mark', priority: 2 });
+  }
+  if (next.status === 'sleeping' && result.kind === 'limit') {
+    const at = new Date(next.nextAttemptAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    await send(cfg, { title: 'Автопилот: лимит Claude', message: `Продолжу ${at} (${d.task.id})`, tags: 'hourglass', priority: 3 });
+  }
+  if (STOPPED.includes(next.status)) await send(cfg, stopMessage(next.status, withProgress(cfg, next.reason)));
   return 'continue';
 }
 
