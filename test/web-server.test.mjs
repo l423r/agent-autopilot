@@ -250,3 +250,17 @@ test('startup kills an orphaned answer process and is not busy', async () => {
   assert.equal((await post('/api/chat', { text: 'привет' })).status, 202);
   await idle();
 });
+
+test('the real panel page: three tabs, relative markdown.mjs, no absolute /api paths', async () => {
+  srv = await startServer(cfg, { port: 0, claudeBin: fake });
+  base = `http://127.0.0.1:${srv.port}`;
+  const res = await get('/');
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  for (const tab of ['Чат', 'План', 'Статус']) assert.match(html, new RegExp(`<button data-tab="[a-z]+"[^>]*>(?:(?!</button>).)*${tab}</button>`));
+  assert.match(html, /from ['"]\.\/markdown\.mjs['"]/);
+  assert.match(html, /['"`]api\/(history|chat|events|stop|reset|plan|status|command)/);
+  assert.doesNotMatch(html, /['"`(]\/api/);
+  assert.doesNotMatch(html, /(src|href|action)=["']\//);
+  assert.doesNotMatch(html, /\.innerHTML\s*=(?!\s*(?:renderMarkdown\(|''|""|``))/);
+});

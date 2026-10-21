@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14121f">
+<title>Пульт</title>
+<style>
+  :root {
+    --bg: #14121f; --panel: #1e1b2e; --panel2: #262238; --line: #332e4a;
+    --text: #ece9f5; --muted: #9a94b3; --accent: #7b3cff; --accent2: #9a6bff;
+    --ok: #3ecf8e; --warn: #f5b942; --bad: #ff5c7a;
+    --tabs-h: 64px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; overflow-x: hidden; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    padding-top: max(10px, env(safe-area-inset-top)); background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 20px; margin: 0; flex: 1; }
+  .pill { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted);
+    max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.running { background: var(--ok); } .dot.paused, .dot.sleeping { background: var(--warn); }
+  .dot.halted, .dot.auth { background: var(--bad); }
+  .icon-btn { min-width: 44px; min-height: 44px; border: none; background: transparent; font-size: 22px; border-radius: 10px; }
+  .icon-btn:active { background: var(--panel2); }
+
+  main { flex: 1; min-height: 0; position: relative; }
+  section { position: absolute; inset: 0; display: none; flex-direction: column; min-width: 0; }
+  section.active { display: flex; }
+  .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px 12px 16px; -webkit-overflow-scrolling: touch; }
+
+  nav.tabs { display: flex; height: var(--tabs-h); background: var(--panel); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom); box-sizing: content-box; }
+  nav.tabs button { flex: 1; border: none; background: transparent; color: var(--muted); font-size: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 44px; }
+  nav.tabs button .ico { font-size: 20px; }
+  nav.tabs button.active { color: var(--text); box-shadow: inset 0 3px 0 var(--accent); }
+
+  /* Chat */
+  .msgs { display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .msg.assistant { align-self: flex-start; background: var(--panel2); border-bottom-left-radius: 4px; }
+  .msg.error { align-self: flex-start; background: #3a1a26; border: 1px solid var(--bad); white-space: pre-wrap; }
+  .msg.streaming::after { content: "▍"; color: var(--accent2); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .empty { color: var(--muted); text-align: center; margin-top: 30%; padding: 0 20px; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 14px; display: none; }
+  .typing.on { display: block; }
+
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md h3 { font-size: 17px; margin: 10px 0 6px; }
+  .md p { margin: 6px 0; }
+  .md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+  .md li.task { list-style: none; margin-left: -20px; }
+  .md code { background: #0e0c17; padding: 1px 5px; border-radius: 5px; font-size: 14px; }
+  .md pre { background: #0e0c17; padding: 10px; border-radius: 8px; overflow-x: auto; max-width: 100%; font-size: 13px; }
+  .md pre code { background: none; padding: 0; white-space: pre; word-break: normal; overflow-wrap: normal; }
+  .md a { color: var(--accent2); }
+
+  .composer { display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+  .composer textarea { flex: 1; min-width: 0; resize: none; max-height: 40vh; min-height: 44px; padding: 10px 12px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  .composer textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: none; background: var(--accent); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: .45; }
+  .btn.stop { background: var(--bad); }
+  .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  .hidden { display: none !important; }
+
+  .menu { position: absolute; right: 10px; top: 58px; z-index: 10; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 6px; box-shadow: 0 8px 24px #0008; }
+  .menu button { display: block; width: 100%; min-height: 44px; padding: 0 16px; text-align: left; border: none; background: none; border-radius: 8px; }
+  .menu button:active { background: var(--line); }
+
+  /* Plan */
+  .plan-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .plan-head .name { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  .bar { height: 10px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .progress-label { font-size: 14px; color: var(--muted); margin: 6px 0 12px; }
+  .tasks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .task { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .task > button { display: flex; gap: 10px; align-items: flex-start; width: 100%; min-height: 48px; padding: 12px;
+    border: none; background: none; text-align: left; }
+  .task .box { flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--muted);
+    display: flex; align-items: center; justify-content: center; font-size: 14px; margin-top: 1px; }
+  .task.done .box { background: var(--ok); border-color: var(--ok); color: #0b1a12; }
+  .task.done .title { color: var(--muted); }
+  .task .title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .task .meta { font-size: 13px; color: var(--muted); }
+  .task .body { padding: 0 12px 12px; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+  .phase { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
+
+  /* Status */
+  .status-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px; margin: 0 0 16px; font: 15px/1.5 ui-monospace, Menlo, monospace; }
+  .actions { display: flex; flex-direction: column; gap: 12px; }
+  .actions .btn { min-height: 56px; font-size: 18px; }
+  .note { margin-top: 14px; min-height: 22px; font-size: 15px; overflow-wrap: anywhere; }
+  .note.ok { color: var(--ok); } .note.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Пульт</h1>
+  <div class="pill" id="pill"><span class="dot" id="dot"></span><span id="pill-text">…</span></div>
+  <button class="icon-btn" id="menu-btn" aria-label="Меню">⋮</button>
+</header>
+<div class="menu hidden" id="menu">
+  <button id="reset-btn">Новый разговор</button>
+</div>
+
+<main>
+  <section id="tab-chat" class="active">
+    <div class="scroll" id="chat-scroll">
+      <div class="msgs" id="msgs"></div>
+      <div class="typing" id="typing">Планировщик думает…</div>
+    </div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Сообщение планировщику" maxlength="20000"></textarea>
+      <button class="btn" id="send-btn" type="submit">Отправить</button>
+      <button class="btn stop hidden" id="stop-btn" type="button">Стоп</button>
+    </form>
+  </section>
+
+  <section id="tab-plan">
+    <div class="scroll">
+      <div class="plan-head">
+        <div class="name" id="plan-name">…</div>
+        <button class="btn ghost" id="plan-refresh" type="button">Обновить</button>
+      </div>
+      <div class="bar"><div id="plan-bar"></div></div>
+      <div class="progress-label" id="plan-progress"></div>
+      <ul class="tasks" id="plan-tasks"></ul>
+    </div>
+  </section>
+
+  <section id="tab-status">
+    <div class="scroll">
+      <pre class="status-text" id="status-text">…</pre>
+      <div class="actions">
+        <button class="btn" id="pause-btn" type="button">⏸ Пауза</button>
+        <button class="btn ghost" id="resume-btn" type="button">▶ Продолжить</button>
+        <button class="btn ghost" id="status-refresh" type="button">Обновить</button>
+      </div>
+      <div class="note" id="cmd-note"></div>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button data-tab="chat" class="active"><span class="ico">💬</span>Чат</button>
+  <button data-tab="plan"><span class="ico">📋</span>План</button>
+  <button data-tab="status"><span class="ico">⚙️</span>Статус</button>
+</nav>
+
+<script type="module">
+import { renderMarkdown } from './markdown.mjs';
+
+// All requests are relative: Caddy serves the panel under /pult/.
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? { cache: 'no-store' } : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw Object.assign(new Error(data.error || `Ошибка ${res.status}`), { status: res.status });
+  return data;
+}
+
+/* ---------- Tabs ---------- */
+let currentTab = 'chat';
+function showTab(name) {
+  currentTab = name;
+  for (const b of document.querySelectorAll('nav.tabs button')) b.classList.toggle('active', b.dataset.tab === name);
+  for (const s of document.querySelectorAll('main section')) s.classList.toggle('active', s.id === `tab-${name}`);
+  if (name === 'plan') loadPlan();
+  if (name === 'status') loadStatus();
+}
+for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
+
+/* ---------- Header status ---------- */
+function setPill(state) {
+  const status = state?.status || 'unknown';
+  $('dot').className = `dot ${status}`;
+  const names = { running: 'работает', paused: 'пауза', sleeping: 'ждёт лимит', idle: 'ожидает', done: 'план выполнен',
+    halted: 'остановлен', auth: 'нужен вход', unknown: 'нет данных' };
+  $('pill-text').textContent = names[status] || status;
+}
+
+async function loadStatus() {
+  try {
+    const s = await api('api/status');
+    $('status-text').textContent = s.text;
+    setPill(s.state);
+  } catch (err) {
+    $('status-text').textContent = `Не удалось получить статус: ${err.message}`;
+    setPill(null);
+  }
+}
+
+/* ---------- Chat ---------- */
+const msgs = $('msgs');
+const scroller = $('chat-scroll');
+let busy = false;
+let streamBubble = null;
+let streamText = '';
+let renderQueued = false;
+
+const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
+
+function bubble(role, text) {
+  const n = el('div', `msg ${role}`);
+  if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(text); }
+  else n.textContent = text;
+  return n;
+}
+
+function renderHistory(entries) {
+  msgs.replaceChildren();
+  if (!entries.length) msgs.append(el('div', 'empty', 'Спросите планировщика о проектах и планах. Он может читать и менять планы автопилота.'));
+  for (const e of entries) msgs.append(bubble(e.role, e.text));
+  streamBubble = null;
+}
+
+function setBusy(on) {
+  busy = on;
+  $('send-btn').classList.toggle('hidden', on);
+  $('stop-btn').classList.toggle('hidden', !on);
+  $('typing').classList.toggle('on', on && !streamText);
+  if (!on && streamBubble) { streamBubble.remove(); streamBubble = null; }
+}
+
+function paintStream() {
+  renderQueued = false;
+  if (!busy) return;
+  const stick = nearBottom();
+  if (!streamBubble) {
+    msgs.querySelector('.empty')?.remove();
+    streamBubble = bubble('assistant', '');
+    streamBubble.classList.add('streaming');
+    msgs.append(streamBubble);
+  }
+  streamBubble.innerHTML = renderMarkdown(streamText);
+  $('typing').classList.toggle('on', !streamText);
+  if (stick) toBottom();
+}
+const queuePaint = () => { if (!renderQueued) { renderQueued = true; requestAnimationFrame(paintStream); } };
+
+async function loadHistory() {
+  try {
+    const h = await api('api/history');
+    const stick = nearBottom();
+    renderHistory(h.entries);
+    setBusy(h.busy);
+    if (h.busy && streamText) queuePaint();
+    if (stick || !h.busy) toBottom();
+  } catch (err) {
+    renderHistory([{ role: 'error', text: `Не удалось загрузить историю: ${err.message}` }]);
+  }
+}
+
+let source = null;
+function connect() {
+  source?.close();
+  source = new EventSource('api/events');
+  source.addEventListener('busy', ev => {
+    const d = JSON.parse(ev.data);
+    if (d.busy) {
+      streamText = d.text || '';
+      if (!busy) loadHistory(); // pick up the user message sent from another tab
+      setBusy(true);
+      queuePaint();
+    } else {
+      streamText = '';
+      setBusy(false);
+      loadHistory();
+      loadStatus();
+    }
+  });
+  source.addEventListener('delta', ev => {
+    streamText += JSON.parse(ev.data).text;
+    queuePaint();
+  });
+  source.addEventListener('error', ev => {
+    // Named 'error' events carry data; connection errors don't — EventSource retries those itself.
+    if (!ev.data) return;
+    const n = bubble('error', JSON.parse(ev.data).text);
+    msgs.append(n);
+    toBottom();
+  });
+}
+
+const input = $('input');
+function autosize() {
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight + 2, window.innerHeight * 0.4)}px`;
+}
+input.addEventListener('input', autosize);
+
+$('composer').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const text = input.value.trim();
+  if (!text || busy) return;
+  $('send-btn').disabled = true;
+  try {
+    await api('api/chat', { text });
+    input.value = '';
+    autosize();
+    msgs.querySelector('.empty')?.remove();
+    msgs.append(bubble('user', text));
+    streamText = '';
+    setBusy(true);
+    toBottom();
+  } catch (err) {
+    msgs.append(bubble('error', err.status === 409 ? 'Планировщик ещё отвечает — дождитесь или нажмите «Стоп».' : err.message));
+    toBottom();
+  } finally {
+    $('send-btn').disabled = false;
+  }
+});
+input.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) $('composer').requestSubmit();
+});
+
+$('stop-btn').addEventListener('click', async () => {
+  try { await api('api/stop', {}); } catch (err) { msgs.append(bubble('error', err.message)); }
+});
+
+/* ---------- Menu ---------- */
+$('menu-btn').addEventListener('click', ev => { ev.stopPropagation(); $('menu').classList.toggle('hidden'); });
+document.addEventListener('click', () => $('menu').classList.add('hidden'));
+$('reset-btn').addEventListener('click', async () => {
+  $('menu').classList.add('hidden');
+  if (!confirm('Начать новый разговор? История и сессия планировщика будут очищены.')) return;
+  try {
+    await api('api/reset', {});
+    showTab('chat');
+    await loadHistory();
+  } catch (err) {
+    msgs.append(bubble('error', err.status === 409 ? 'Сначала остановите ответ.' : err.message));
+    toBottom();
+  }
+});
+
+/* ---------- Plan ---------- */
+const TASK_HEAD = /^#{2,4}\s+Task\s+(\d+)\b/;
+// Each task's own text: from its heading up to the next task or phase heading.
+function taskBodies(markdown) {
+  const bodies = new Map();
+  let id = null;
+  let lines = [];
+  const flush = () => { if (id) bodies.set(id, lines.join('\n').trim()); };
+  for (const line of markdown.split(/\r?\n/)) {
+    const m = line.match(TASK_HEAD);
+    if (m) { flush(); id = `Task ${m[1]}`; lines = []; continue; }
+    if (/^#{1,2}\s/.test(line) || /^---\s*$/.test(line)) { flush(); id = null; lines = []; continue; }
+    if (id) lines.push(line);
+  }
+  flush();
+  return bodies;
+}
+
+async function loadPlan() {
+  const list = $('plan-tasks');
+  try {
+    const p = await api('api/plan');
+    $('plan-name').textContent = p.path.split('/').pop();
+    $('plan-name').title = p.path;
+    $('plan-bar').style.width = p.total ? `${(100 * p.done) / p.total}%` : '0';
+    $('plan-progress').textContent = `Выполнено ${p.done} из ${p.total}`;
+    const bodies = taskBodies(p.markdown);
+    const open = new Set([...list.querySelectorAll('.task.open')].map(n => n.dataset.id));
+    list.replaceChildren();
+    let phase;
+    for (const t of p.tasks) {
+      if (t.phase && t.phase !== phase) { phase = t.phase; list.append(el('li', 'phase', `Этап ${phase}`)); }
+      const li = el('li', `task${t.done ? ' done' : ''}`);
+      li.dataset.id = t.id;
+      const head = el('button');
+      head.type = 'button';
+      head.append(el('span', 'box', t.done ? '✓' : ''));
+      const title = el('span', 'title', `${t.id}: ${t.title}`);
+      title.append(el('div', 'meta', `${t.checked}/${t.boxes} шагов${t.manual ? ' · вручную' : ''}`));
+      head.append(title);
+      const body = el('div', 'body md hidden');
+      head.addEventListener('click', () => {
+        const opening = body.classList.contains('hidden');
+        if (opening && !body.childElementCount) body.innerHTML = renderMarkdown(bodies.get(t.id) || '(нет текста)');
+        body.classList.toggle('hidden', !opening);
+        li.classList.toggle('open', opening);
+      });
+      li.append(head, body);
+      list.append(li);
+      if (open.has(t.id)) head.click();
+    }
+    if (!p.tasks.length) list.append(el('li', 'empty', 'В плане нет задач.'));
+  } catch (err) {
+    $('plan-name').textContent = 'План не загружен';
+    list.replaceChildren(el('li', 'note bad', err.message));
+  }
+}
+$('plan-refresh').addEventListener('click', loadPlan);
+
+/* ---------- Status commands ---------- */
+async function command(cmd, label) {
+  const note = $('cmd-note');
+  note.className = 'note';
+  note.textContent = 'Отправляю…';
+  for (const b of [$('pause-btn'), $('resume-btn')]) b.disabled = true;
+  try {
+    await api('api/command', { cmd });
+    note.className = 'note ok';
+    note.textContent = `✓ Команда «${label}» отправлена. Автопилот выполнит её в течение минуты.`;
+    setTimeout(loadStatus, 3000);
+  } catch (err) {
+    note.className = 'note bad';
+    note.textContent = `✗ Не удалось: ${err.message}`;
+  } finally {
+    for (const b of [$('pause-btn'), $('resume-btn')]) b.disabled = false;
+  }
+}
+$('pause-btn').addEventListener('click', () => command('pause', 'Пауза'));
+$('resume-btn').addEventListener('click', () => command('resume', 'Продолжить'));
+$('status-refresh').addEventListener('click', loadStatus);
+
+/* ---------- Lifecycle ---------- */
+// A phone may freeze the page in the background: on return, reload history and reopen the stream.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  loadHistory();
+  connect();
+  loadStatus();
+  if (currentTab === 'plan') loadPlan();
+});
+setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 30_000);
+
+loadHistory();
+connect();
+loadStatus();
+</script>
+</body>
+</html>
