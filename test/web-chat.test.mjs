@@ -1,6 +1,6 @@
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,8 @@ beforeEach(() => {
   process.env.FAKE_ARGV = argvFile;
   process.env.FAKE_STREAM = 'ok';
 });
+
+afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const make = () => createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake });
 const argv = () => JSON.parse(readFileSync(argvFile, 'utf8'));

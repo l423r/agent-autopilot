@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
@@ -24,7 +24,7 @@ const PLAN = `## Этап 1. A
 `;
 
 function setup(progress = '') {
-  const root = mkdtempSync(join(tmpdir(), 'ap-cli-'));
+  const root = tempDir('ap-cli-');
   writeFileSync(join(root, 'plan.md'), PLAN);
   writeFileSync(join(root, 'progress.md'), progress);
   const cfg = {
@@ -40,6 +40,9 @@ const exec = (root, args, mode) => run('node', [cli, ...args], {
   env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: mode ?? 'ok', FAKE_PLAN: join(root, 'plan.md') },
   timeout: 30_000,
 });
+const temps = [];
+after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+const tempDir = prefix => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.push(d); return d; };
 const state = root => JSON.parse(readFileSync(join(root, 'state', 'state.json'), 'utf8'));
 
 test('once with FAKE_MODE=limit → status sleeping', async () => {
@@ -82,6 +85,21 @@ test('status prints progress and APK line', async () => {
   assert.match(stdout, /https:\/\/expo\.dev\/x/);
 });
 
+test('status with an old config without projects prints the plan from planPath', async () => {
+  const root = tempDir('ap-cli-');
+  writeFileSync(join(root, 'plan.md'), PLAN);
+  writeFileSync(join(root, 'progress.md'), '');
+  const cfg = {
+    projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
+    autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'),
+    retryMinutes: 15, maxAttempts: 3, iterationTimeoutMinutes: 60, limitPatterns: [], authPatterns: [],
+  };
+  writeFileSync(join(root, 'config.json'), JSON.stringify(cfg));
+  const { stdout } = await exec(root, ['status']);
+  assert.match(stdout, /Прогресс: 1\/3/);
+  assert.match(stdout, /Task 2: two/);
+});
+
 test('resume clears halted state', async () => {
   const { root } = setup();
   await exec(root, ['run'], 'ok');
@@ -110,7 +128,7 @@ test('daemon killed mid-iteration still counts the attempt', async () => {
 function setupGit(extra) {
   const ctx = setup();
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim();
-  const remote = mkdtempSync(join(tmpdir(), 'ap-remote-'));
+  const remote = tempDir('ap-remote-');
   git(remote, 'init', '-q', '--bare', '-b', 'main');
   git(ctx.root, 'init', '-q', '-b', 'main');
   git(ctx.root, 'config', 'user.email', 't@t');

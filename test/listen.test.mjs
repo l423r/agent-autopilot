@@ -1,7 +1,7 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { subscribeCommands } from '../lib/listen.mjs';
@@ -28,7 +28,10 @@ async function fakeStream(handlers) {
 }
 
 const line = o => JSON.stringify(o) + '\n';
-const tmp = () => mkdtempSync(join(tmpdir(), 'listen-'));
+const temps = [];
+after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+const tempDir = prefix => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.push(d); return d; };
+const tmp = () => tempDir('listen-');
 const until = async (cond, ms = 3000) => {
   const end = Date.now() + ms;
   while (!cond()) {

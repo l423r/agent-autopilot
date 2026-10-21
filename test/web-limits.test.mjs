@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fetchLimits } from '../web/limits.mjs';
@@ -73,7 +73,11 @@ test('fetchLimits: network error mentioning the token → error without the toke
 });
 
 let srv;
-afterEach(async () => { await srv?.close(); srv = null; });
+afterEach(async () => {
+  await srv?.close();
+  srv = null;
+  rmSync(root, { recursive: true, force: true });
+});
 
 test('/api/limits: cached for 60 s — two requests, one fetch', async () => {
   const fetchImpl = fakeFetch(200, USAGE);

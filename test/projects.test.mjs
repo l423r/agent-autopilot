@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,10 @@ const cfgWithProjects = stateDir => ({
     { name: 'beta', projectDir: BETA, plansDir: 'plans' },
   ],
 });
+
+const temps = [];
+after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+const tempDir = prefix => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.push(d); return d; };
 
 test('listProjects без projects → один проект из старых полей', () => {
   const cfg = { projectDir: '/root/sigaret-counter', planPath: 'docs/superpowers/plans/x.md', progressPath: 'docs/superpowers/progress.md' };
@@ -73,7 +77,7 @@ test('findPlan: найденный план и защита от чужих пу
 });
 
 test('effectiveConfig: без active.json — исходные пути, с ним — новые', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  const dir = tempDir('ap-');
   const cfg = cfgWithProjects(dir);
   const same = effectiveConfig(cfg);
   assert.deepEqual(same, cfg);
@@ -92,7 +96,7 @@ test('effectiveConfig: без active.json — исходные пути, с ни
 });
 
 test('requestSwitch дважды → takeSwitch отдаёт второй, повторный → null', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  const dir = tempDir('ap-');
   assert.equal(takeSwitch(dir), null);
   requestSwitch(dir, { projectDir: ALPHA, planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md' });
   requestSwitch(dir, { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' });
@@ -102,7 +106,7 @@ test('requestSwitch дважды → takeSwitch отдаёт второй, по�
 });
 
 test('applySwitch пишет active.json и сбрасывает состояние', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ap-'));
+  const dir = tempDir('ap-');
   saveState(dir, { status: 'halted', currentTask: 'Task 2', attempts: { 'Task 2': 3 }, nextAttemptAt: '2026-10-21T10:00:00.000Z', reason: 'x', updatedAt: null });
   const target = { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
   applySwitch(dir, target);

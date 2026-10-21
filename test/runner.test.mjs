@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,8 +12,12 @@ const fake = fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url
 const task = { id: 'Task 2', title: 'Second', phase: null, manual: false, done: false, lastInPhase: true };
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
+const temps = [];
+after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+const tempDir = prefix => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.push(d); return d; };
+
 function setup() {
-  const root = mkdtempSync(join(tmpdir(), 'ap-run-'));
+  const root = tempDir('ap-run-');
   const cfg = { projectDir: root, autopilotDir: root, planPath: 'plan.md', progressPath: 'progress.md' };
   return { cfg, stateDir: join(root, 'state'), logDir: join(root, 'logs') };
 }

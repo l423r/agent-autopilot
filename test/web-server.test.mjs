@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, readdirSync, existsSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, readdirSync, existsSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,7 @@ afterEach(async () => {
   await srv?.close();
   srv = null;
   await new Promise(r => ntfy.close(r));
+  rmSync(root, { recursive: true, force: true });
 });
 
 async function start() {

@@ -28,10 +28,10 @@
 
 **Files:** Modify все `test/*.test.mjs` с `mkdtempSync`
 
-- [ ] **Step 1:** Записать число `ls -d /tmp/ap-* /tmp/*-test-* 2>/dev/null | wc -l` (до), прогнать `npm test`, записать (после) — разница > 0 (воспроизведение), в журнал.
-- [ ] **Step 2:** В каждом файле с `mkdtempSync` — `afterEach`/`after` с `rmSync(dir, { recursive: true, force: true })` (после остановки серверов и дочерних процессов теста).
-- [ ] **Step 3:** `npm test` → PASS, и число каталогов после = до. В `test/cli.test.mjs` добавить сценарий со старым конфигом без `projects` во временном каталоге (а не из `config.example.json`): `status` печатает план из `planPath`.
-- [ ] **Step 4: Commit** — `test: clean up temp dirs; cover config without projects`
+- [x] **Step 1:** Записать число `ls -d /tmp/ap-* /tmp/*-test-* 2>/dev/null | wc -l` (до), прогнать `npm test`, записать (после) — разница > 0 (воспроизведение), в журнал.
+- [x] **Step 2:** В каждом файле с `mkdtempSync` — `afterEach`/`after` с `rmSync(dir, { recursive: true, force: true })` (после остановки серверов и дочерних процессов теста).
+- [x] **Step 3:** `npm test` → PASS, и число каталогов после = до. В `test/cli.test.mjs` добавить сценарий со старым конфигом без `projects` во временном каталоге (а не из `config.example.json`): `status` печатает план из `planPath`.
+- [x] **Step 4: Commit** — `test: clean up temp dirs; cover config without projects`
 
 ### Task 2: Упоминания и неполные записи проектов
 
