@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Autopilot CLI: run | once | status | resume
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -24,7 +24,7 @@ const COMMAND_TICK_MS = 1000;
 // nothing can change (status, unknown words, anything while busy); state.json is written by the
 // main loop alone, between iterations. `pause` during an iteration sets pauseAfterTask, mirrored
 // in state/pause-after-task so that an acknowledged pause survives a crash of the daemon.
-const commands = { enabled: false, queue: [], busy: false, pauseAfterTask: false };
+const commands = { enabled: false, queue: [], busy: false, pauseAfterTask: false, lastPauseAt: 0 };
 
 const pauseFile = cfg => join(cfg.stateDir, 'pause-after-task');
 function setPauseAfterTask(cfg, on) {
@@ -169,6 +169,7 @@ async function reply(cfg, r) {
 async function onCommand(cfg, { message }) {
   const cmd = parseCommand(message);
   logEvent(cfg, `команда с телефона: ${cmd ?? 'неизвестная'}`);
+  if (cmd === 'pause') commands.lastPauseAt = Date.now();
   if (!commands.busy && (cmd === 'pause' || cmd === 'resume')) {
     commands.queue.push(cmd);
     return;
@@ -197,17 +198,28 @@ async function drainCommands(cfg) {
 // A plan switch requested by the panel (<stateDir>/switch.json). Taken only here, between
 // iterations, so a running task always finishes on the plan it started on.
 async function applyPendingSwitch(cfg) {
+  let requestedAt;
+  try { requestedAt = statSync(join(cfg.stateDir, 'switch.json')).mtimeMs; } catch { return; }
   const t = takeSwitch(cfg.stateDir);
   if (!t) return;
   const project = listProjects(cfg).find(p => resolve(p.projectDir) === resolve(t.projectDir));
+  const label = `${project?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
+  // switch.json may be written by hand: a missing plan must not become a crash loop via active.json.
+  if (!existsSync(resolve(t.projectDir, t.planPath))) {
+    logEvent(cfg, `Переключение отклонено: нет плана ${resolve(t.projectDir, t.planPath)}`);
+    await send(cfg, { title: 'Автопилот: план не найден', message: `Не переключено: нет файла ${t.planPath} (${label})`, tags: 'warning', priority: 3 });
+    return;
+  }
   const target = { projectDir: t.projectDir, planPath: t.planPath, progressPath: t.progressPath ?? progressPathFor(project ?? {}, t.planPath) };
   const was = basename(cfg.planPath);
+  // A pause sent after the switch request wins: the plan changes, the autopilot stays paused.
+  const keepPaused = loadState(cfg.stateDir).status === 'paused' && commands.lastPauseAt > requestedAt;
   applySwitch(cfg.stateDir, target);
+  if (keepPaused) saveState(cfg.stateDir, { ...loadState(cfg.stateDir), status: 'paused', reason: 'Пауза по команде с телефона' });
   Object.assign(cfg, target);
   setPauseAfterTask(cfg, false);
-  const label = `${project?.name ?? basename(target.projectDir)} / ${basename(target.planPath)}`;
-  logEvent(cfg, `Переключено: ${label} (было: ${was})`);
-  await send(cfg, { title: 'Автопилот: другой план', message: withProgress(cfg, `Переключено: ${label}`), tags: 'twisted_rightwards_arrows', priority: 3 });
+  logEvent(cfg, `Переключено: ${label} (было: ${was})${keepPaused ? ', на паузе' : ''}`);
+  await send(cfg, { title: 'Автопилот: другой план', message: withProgress(cfg, `Переключено: ${label}${keepPaused ? '\nНа паузе — нажми «Продолжить»' : ''}`), tags: 'twisted_rightwards_arrows', priority: 3 });
 }
 
 // Sleeps until `until` (ms timestamp, Infinity = no deadline); with commands on, in steps

@@ -87,20 +87,23 @@ test('suggestion: last line is cut, text trimmed', () => {
   assert.deepEqual(splitSuggestion('Готово.\n\n<!-- suggest:   Да, запускай  -->\n'),
     { body: 'Готово.', suggestion: 'Да, запускай' });
 });
-test('suggestion: line in the middle is left alone', () => {
-  const text = 'a\n<!-- suggest: Да -->\nb';
-  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+test('suggestion: line in the middle → no suggestion, line hidden, text kept', () => {
+  assert.deepEqual(splitSuggestion('a\n<!-- suggest: Да -->\nb'), { body: 'a\nb', suggestion: null });
+  assert.deepEqual(splitSuggestion('Ответ <!-- suggest: Да --> ещё'), { body: 'Ответ ещё', suggestion: null });
 });
 test('suggestion: no line → null', () => {
   assert.deepEqual(splitSuggestion('Просто ответ'), { body: 'Просто ответ', suggestion: null });
 });
 test('suggestion: empty → null', () => {
-  const text = 'Ответ\n<!-- suggest:   -->';
-  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+  assert.deepEqual(splitSuggestion('Ответ\n<!-- suggest:   -->'), { body: 'Ответ', suggestion: null });
 });
 test('suggestion: longer than 200 chars → null', () => {
-  const text = `Ответ\n<!-- suggest: ${'я'.repeat(201)} -->`;
-  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+  assert.deepEqual(splitSuggestion(`Ответ\n<!-- suggest: ${'я'.repeat(201)} -->`), { body: 'Ответ', suggestion: null });
+});
+test('suggestion: service line never reaches rendered chat', () => {
+  for (const t of ['a\n<!-- suggest: Да -->\nb', 'Ответ <!-- suggest: Да -->', 'x\n<!--suggest:-->', '<!-- suggest: Да -->\n\nтекст\n<!-- suggest: Нет -->']) {
+    assert.doesNotMatch(renderMarkdown(splitSuggestion(t).body), /suggest/, t);
+  }
 });
 test('suggestion: markup stays plain text', () => {
   assert.deepEqual(splitSuggestion('Ответ\n<!-- suggest: <b>x</b> -->'),

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -455,6 +455,41 @@ test('switch: между задачами — текущая задача A до
     assert.equal(active(d.root).planPath, 'plan2.md');
     await waitFor(() => state(d.root).status === 'done');
     assert.match(readFileSync(join(d.root, 'logs', 'autopilot.log'), 'utf8'), /Переключено/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('switch: «пауза» после запроса переключения — план B выбран, но автопилот на паузе', async () => {
+  const d = await daemon('slow', { fakePlan: '' });
+  try {
+    await waitFor(() => d.n.subs.length > 0 && state(d.root).status === 'running');
+    requestSwitch(join(d.root, 'state'), toB(d.root));
+    await new Promise(r => setTimeout(r, 50));
+    d.n.publish('пауза');
+    await waitFor(() => d.replies().some(r => /после текущей задачи/i.test(r.body)), 1500);
+    await waitFor(() => existsSync(join(d.root, 'state', 'active.json')), 20_000);
+    await new Promise(r => setTimeout(r, 2500));
+    assert.equal(state(d.root).status, 'paused');
+    assert.equal(active(d.root).planPath, 'plan2.md');
+    assert.doesNotMatch(planB(d.root), /- \[x\]/);
+    assert.match(planText(d.root), /### Task 2: two\n- \[x\]/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('switch: запрос на несуществующий план не роняет демон и не меняет active.json', async () => {
+  const d = await daemon('tick', { fakePlan: '', preState: { status: 'done', currentTask: null, attempts: {}, nextAttemptAt: null, reason: 'План выполнен' } });
+  try {
+    await waitFor(() => d.n.subs.length > 0);
+    requestSwitch(join(d.root, 'state'), { projectDir: d.root, planPath: 'typo.md' });
+    await waitFor(() => d.replies().some(r => /typo\.md/.test(r.body)), 2500);
+    await new Promise(r => setTimeout(r, 500));
+    assert.equal(d.child.exitCode, null, 'демон работает');
+    assert.ok(!existsSync(join(d.root, 'state', 'active.json')));
+    assert.ok(!existsSync(join(d.root, 'state', 'switch.json')));
+    assert.equal(state(d.root).status, 'done');
   } finally {
     await d.stop();
   }

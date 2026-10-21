@@ -32,12 +32,16 @@ function listItem(text) {
 
 // The planner ends a reply with `<!-- suggest: … -->` — the user's likely answer.
 // Only the last non-empty line counts; the suggestion is plain text (≤ 200 chars).
+// Service lines anywhere else (or invalid ones) are still removed from the body.
 export function splitSuggestion(text) {
   const src = String(text ?? '');
   const m = /(?:^|\n)[ \t]*<!--\s*suggest:(.*?)-->\s*$/.exec(src);
-  const suggestion = m && m[1].trim();
-  if (!suggestion || suggestion.length > 200) return { body: src, suggestion: null };
-  return { body: src.slice(0, m.index).trimEnd(), suggestion };
+  const suggestion = (m && m[1].trim()) || null;
+  const body = src
+    .replace(/^[ \t]*<!--\s*suggest:[^\n]*?-->[ \t]*(?:\n|$)/gm, '')
+    .replace(/[ \t]*<!--\s*suggest:[^\n]*?-->/g, '')
+    .trimEnd();
+  return { body, suggestion: suggestion && suggestion.length <= 200 ? suggestion : null };
 }
 
 export function renderMarkdown(src) {
