@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMarkdown } from '../web/markdown.mjs';
+import { renderMarkdown, splitSuggestion } from '../web/markdown.mjs';
 
 test('heading → h3', () => {
   assert.equal(renderMarkdown('# Заголовок'), '<h3>Заголовок</h3>');
@@ -81,4 +81,28 @@ test('markdown: код внутри ссылки', () => {
   const out = renderMarkdown('[`a`](https://x.y)');
   assert.match(out, /<a href="https:\/\/x\.y"[^>]*><code>a<\/code><\/a>/);
   assert.ok(!out.includes('\u0000'), JSON.stringify(out));
+});
+
+test('suggestion: last line is cut, text trimmed', () => {
+  assert.deepEqual(splitSuggestion('Готово.\n\n<!-- suggest:   Да, запускай  -->\n'),
+    { body: 'Готово.', suggestion: 'Да, запускай' });
+});
+test('suggestion: line in the middle is left alone', () => {
+  const text = 'a\n<!-- suggest: Да -->\nb';
+  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+});
+test('suggestion: no line → null', () => {
+  assert.deepEqual(splitSuggestion('Просто ответ'), { body: 'Просто ответ', suggestion: null });
+});
+test('suggestion: empty → null', () => {
+  const text = 'Ответ\n<!-- suggest:   -->';
+  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+});
+test('suggestion: longer than 200 chars → null', () => {
+  const text = `Ответ\n<!-- suggest: ${'я'.repeat(201)} -->`;
+  assert.deepEqual(splitSuggestion(text), { body: text, suggestion: null });
+});
+test('suggestion: markup stays plain text', () => {
+  assert.deepEqual(splitSuggestion('Ответ\n<!-- suggest: <b>x</b> -->'),
+    { body: 'Ответ', suggestion: '<b>x</b>' });
 });

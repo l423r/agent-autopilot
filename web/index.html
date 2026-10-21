@@ -98,6 +98,9 @@
   .mentions button:active, .mentions button.on { background: var(--line); }
   .mentions small { color: var(--muted); margin-left: 8px; }
   .mention { color: var(--accent2); font-weight: 600; }
+  .suggest { flex-basis: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggest:active { background: var(--line); }
   .msg.user .mention { color: #fff; background: #ffffff2e; border-radius: 5px; padding: 0 3px; }
 
   .menu { position: absolute; right: 10px; top: 58px; z-index: 10; background: var(--panel2); border: 1px solid var(--line);
@@ -166,6 +169,7 @@
     <form class="composer" id="composer">
       <div class="mentions hidden" id="mentions"></div>
       <div class="pending hidden" id="pending"></div>
+      <button class="suggest hidden" id="suggest-btn" type="button"></button>
       <label class="attach" aria-label="Прикрепить картинку">📎<input type="file" id="file-input" accept="image/*" multiple></label>
       <textarea id="input" rows="1" placeholder="Сообщение" maxlength="20000"></textarea>
       <button class="btn" id="send-btn" type="submit">Отправить</button>
@@ -204,7 +208,7 @@
 </nav>
 
 <script type="module">
-import { renderMarkdown } from './markdown.mjs';
+import { renderMarkdown, splitSuggestion } from './markdown.mjs';
 
 // All requests are relative: Caddy serves the panel under /pult/.
 const $ = id => document.getElementById(id);
@@ -270,7 +274,7 @@ const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
 function bubble(role, text, at, images) {
   const n = el('div', `msg ${role}`);
   if (at) n.dataset.at = at;
-  if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(text); }
+  if (role === 'assistant') { n.classList.add('md'); n.innerHTML = renderMarkdown(splitSuggestion(text).body); }
   else if (role === 'user') {
     if (images?.length) n.append(imageLinks(images));
     n.append(...withMentions(text));
@@ -316,6 +320,8 @@ function renderHistory(entries) {
   if (!entries.length) msgs.append(el('div', 'empty', 'Спросите планировщика о проектах и планах. Он может читать и менять планы автопилота.'));
   for (const e of entries) msgs.append(bubble(e.role, e.text, e.at, e.images));
   streamBubble = null;
+  const last = entries.at(-1);
+  setSuggestion(last?.role === 'assistant' ? splitSuggestion(last.text).suggestion : null);
 }
 
 function setBusy(on) {
@@ -324,7 +330,27 @@ function setBusy(on) {
   $('stop-btn').classList.toggle('hidden', !on);
   $('typing').classList.toggle('on', on && !streamText);
   if (!on && streamBubble) { streamBubble.remove(); streamBubble = null; }
+  updateSuggestion();
 }
+
+// The planner's likely next message: the field's placeholder and a one-tap button above it.
+// Only for the last answer; hidden while it streams and once the user starts typing.
+let suggestion = null;
+function setSuggestion(text) {
+  suggestion = text;
+  updateSuggestion();
+}
+function updateSuggestion() {
+  const show = Boolean(suggestion && !busy);
+  $('input').placeholder = show ? suggestion : 'Сообщение';
+  $('suggest-btn').textContent = show ? `↵ ${suggestion}` : '';
+  $('suggest-btn').classList.toggle('hidden', !show || Boolean($('input').value));
+}
+$('suggest-btn').addEventListener('click', () => {
+  if (!suggestion || busy) return;
+  $('input').value = suggestion;
+  $('composer').requestSubmit();
+});
 
 function paintStream() {
   renderQueued = false;
@@ -336,7 +362,9 @@ function paintStream() {
     streamBubble.classList.add('streaming');
     msgs.append(streamBubble);
   }
-  streamBubble.innerHTML = renderMarkdown(streamText);
+  // Hide the service line while it is still arriving: any unfinished `<!--` tail.
+  const shown = splitSuggestion(streamText).body.replace(/(^|\n)[ \t]*<!--[^\n]*$/, '');
+  streamBubble.innerHTML = renderMarkdown(shown);
   $('typing').classList.toggle('on', !streamText);
   if (stick) toBottom();
 }
@@ -406,6 +434,7 @@ function updateSend() {
   pendingBox.classList.toggle('hidden', !attachments.length);
 }
 input.addEventListener('input', updateSend);
+input.addEventListener('input', updateSuggestion);
 
 // Phone photos weigh megabytes: shrink to MAX_SIDE on the long side, JPEG 0.85.
 async function shrink(file) {
@@ -527,6 +556,7 @@ $('composer').addEventListener('submit', async ev => {
     await api('api/chat', images.length ? { text, images } : { text });
     input.value = '';
     autosize();
+    setSuggestion(null);
     for (const a of [...attachments]) removeAttachment(a);
     msgs.querySelector('.empty')?.remove();
     // The SSE 'busy' event may have already reloaded history with this very message.

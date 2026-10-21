@@ -30,6 +30,16 @@ function listItem(text) {
     : `<li class="task done"><input type="checkbox" checked disabled> ${inline(m[2])}</li>`;
 }
 
+// The planner ends a reply with `<!-- suggest: … -->` — the user's likely answer.
+// Only the last non-empty line counts; the suggestion is plain text (≤ 200 chars).
+export function splitSuggestion(text) {
+  const src = String(text ?? '');
+  const m = /(?:^|\n)[ \t]*<!--\s*suggest:(.*?)-->\s*$/.exec(src);
+  const suggestion = m && m[1].trim();
+  if (!suggestion || suggestion.length > 200) return { body: src, suggestion: null };
+  return { body: src.slice(0, m.index).trimEnd(), suggestion };
+}
+
 export function renderMarkdown(src) {
   const lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n');
   const out = [];

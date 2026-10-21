@@ -22,6 +22,8 @@ const ANSWER = [
   '```js\nconst veryLongLine = "' + 'x'.repeat(160) + '";\nconsole.log(veryLongLine);\n```\n\n',
   'Длинная строка: ' + 'ОченьДлинноеСловоБезПробелов'.repeat(6) + '\n\n',
   '<script>window.__xss = 1</script> <img src=x onerror="window.__xss = 1"> [ссылка](javascript:window.__xss=1)\n',
+  // Hidden last line: the suggested reply (each part is its own assistant message, so it comes whole).
+  '<!-- suggest: Да, запускай -->\n',
 ];
 
 const failures = [];
@@ -92,6 +94,13 @@ try {
   await page.waitForFunction(() => document.getElementById('pill-text').textContent !== '…');
   await shot('chat-empty');
 
+  await page.evaluate(() => {
+    window.__leak = '';
+    new MutationObserver(() => {
+      const t = document.querySelector('.msg.streaming')?.textContent || '';
+      if (/<!--|suggest/.test(t)) window.__leak = t.slice(-40);
+    }).observe(document.getElementById('msgs'), { childList: true, subtree: true, characterData: true });
+  });
   await page.fill('#input', 'Какие у нас проекты и что в работе?');
   await page.click('#send-btn');
   await page.waitForFunction(() => document.querySelector('.msg.streaming')?.textContent.includes('осталось'));
@@ -112,6 +121,17 @@ try {
     fail('javascript:-ссылка стала ссылкой');
   }
   await shot('chat-answer');
+
+  // Suggested reply: hidden line → placeholder and a one-tap button; typing hides the button.
+  const leak = await page.evaluate(() => window.__leak);
+  if (leak) fail(`служебная строка видна во время ответа: «${leak}»`);
+  if (await page.evaluate(() => /<!--|suggest/.test(document.getElementById('msgs').textContent))) fail('служебная строка видна в чате');
+  const sug = await page.evaluate(() => ({ btn: document.getElementById('suggest-btn').textContent, ph: document.getElementById('input').placeholder }));
+  if (sug.btn !== '↵ Да, запускай' || sug.ph !== 'Да, запускай') fail(`подсказка: ${JSON.stringify(sug)}`);
+  if (!(await page.isVisible('#suggest-btn'))) fail('кнопка подсказки не видна');
+  await shot('chat-suggest');
+  await page.type('#input', 'Н');
+  if (await page.isVisible('#suggest-btn')) fail('кнопка подсказки не скрылась при наборе');
 
   // `@` opens the project picker above the field; a tap inserts `@name `, the sent message highlights it.
   await page.fill('#input', '');
@@ -166,6 +186,14 @@ try {
   if (sentImg.pending) fail('миниатюры над полем не очистились после отправки');
   await page.evaluate(() => { const s = document.getElementById('chat-scroll'); s.scrollTop = s.scrollHeight; });
   await shot('chat-image-sent');
+
+  // A tap on the suggestion sends it as the user's message.
+  await page.fill('#input', '');
+  await page.click('#suggest-btn');
+  await page.waitForSelector('#send-btn:not(.hidden)', { timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 4, null, { timeout: 15_000 });
+  const lastUser = await page.evaluate(() => [...document.querySelectorAll('.msg.user')].at(-1).textContent);
+  if (lastUser !== 'Да, запускай') fail(`по тапу отправлено «${lastUser}»`);
 
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
