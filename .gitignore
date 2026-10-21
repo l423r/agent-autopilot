@@ -3,3 +3,6 @@ state/
 logs/
 config.json
 .superpowers/
+state-*/
+config.*.json
+!config.example.json
