@@ -59,7 +59,7 @@
   - `applyCommand(cmd, state, { busy: boolean, summary: string }): { state: object|null, pauseAfterTask: boolean, reply: { title: string, message: string } }` — `state: null` значит «не менять».
   - `statusText(state, plan): string` — 2–4 строки: статус, прогресс x/N, текущая/следующая задача, следующая попытка.
 
-- [ ] **Step 1: Тесты** `test/commands.test.mjs`:
+- [x] **Step 1: Тесты** `test/commands.test.mjs`:
   - `parseCommand`: `' Статус '`→status, `'?'`→status, `'STOP'`→pause, `'дальше'`→resume, `'rm -rf /'`→null, `''`→null, строка 10 000 символов → null.
   - `applyCommand('pause', idle, {busy:false})` → state.status `paused`, reason содержит «по команде»; `busy:true` → state null, pauseAfterTask true, reply упоминает текущую задачу.
   - `applyCommand('pause', {status:'halted'})` → state null, reply «уже остановлен».
@@ -67,10 +67,10 @@
   - `applyCommand('status', …)` → state null, reply.message === summary.
   - `applyCommand(null, …)` → state null, reply перечисляет «статус, пауза, продолжить».
   - `statusText` содержит `3/5` и id следующей задачи.
-- [ ] **Step 2:** `npm test` → новые тесты FAIL (нет модуля)
-- [ ] **Step 3:** Реализовать `lib/commands.mjs`
-- [ ] **Step 4:** `npm test` → PASS все
-- [ ] **Step 5: Commit** — `git commit -m "feat(autopilot): command parsing and application"`
+- [x] **Step 2:** `npm test` → новые тесты FAIL (нет модуля)
+- [x] **Step 3:** Реализовать `lib/commands.mjs`
+- [x] **Step 4:** `npm test` → PASS все
+- [x] **Step 5: Commit** — `git commit -m "feat(autopilot): command parsing and application"`
 
 ### Task 2: Подписка на канал команд
 
