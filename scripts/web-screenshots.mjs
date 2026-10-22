@@ -5,6 +5,7 @@
 import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -25,6 +26,10 @@ const ANSWER = [
   // Hidden last line: the suggested reply (each part is its own assistant message, so it comes whole).
   '<!-- suggest: Да, запускай -->\n',
 ];
+
+// Pictures the planner shows: one published to the uploads, one already removed from them.
+const SHOWN = randomUUID();
+const GONE = randomUUID();
 
 const failures = [];
 const fail = msg => { failures.push(msg); console.error(`✗ ${msg}`); };
@@ -73,11 +78,29 @@ const url = `http://127.0.0.1:${server.port}/`;
 const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  page.on('console', m => { if (m.type() === 'error') fail(`консоль: ${m.text()}`); });
-  page.on('response', r => { if (r.status() >= 400) fail(`HTTP ${r.status()}: ${new URL(r.url()).pathname}`); });
+  // The removed picture is expected to answer 404.
+  const expected404 = url => url?.endsWith(`/uploads/${GONE}.png`);
+  page.on('console', m => { if (m.type() === 'error' && !expected404(m.location()?.url)) fail(`консоль: ${m.text()}`); });
+  page.on('response', r => { if (r.status() >= 400 && !(r.status() === 404 && expected404(r.url()))) fail(`HTTP ${r.status()}: ${new URL(r.url()).pathname}`); });
   page.on('pageerror', e => fail(`ошибка страницы: ${e.message}`));
   page.on('dialog', d => d.accept());
   mkdirSync(OUT, { recursive: true });
+
+  // A PNG of the given size drawn by the page (a gradient, so it is visible on the screenshot).
+  const gradientPng = async (width, height) => Buffer.from(await page.evaluate(async ([w, h]) => {
+    const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#7b3cff');
+    grad.addColorStop(1, '#3ecf8e');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }, [width, height]), 'base64');
 
   const check = async name => {
     const problems = await page.evaluate(() => {
@@ -167,21 +190,7 @@ try {
   if (await page.evaluate(() => document.body.innerText.includes('[Проекты из сообщения]'))) fail('служебный блок проектов виден на странице');
 
   // 📎: a big picture is shrunk to 2000 px JPEG, uploaded, shown above the field; it can go without text.
-  const bigPng = await page.evaluate(async () => {
-    const c = Object.assign(document.createElement('canvas'), { width: 3000, height: 1600 });
-    const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 3000, 1600);
-    grad.addColorStop(0, '#7b3cff');
-    grad.addColorStop(1, '#3ecf8e');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 3000, 1600);
-    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let bin = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    return btoa(bin);
-  });
-  const file = { name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from(bigPng, 'base64') };
+  const file = { name: 'screen.png', mimeType: 'image/png', buffer: await gradientPng(3000, 1600) };
   await page.setInputFiles('#file-input', [file, file]);
   await page.waitForFunction(() => document.querySelectorAll('#pending .thumb').length === 2 && !document.querySelector('#pending .thumb.loading'));
   await page.click('#pending .thumb .x');
@@ -211,6 +220,42 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 4, null, { timeout: 15_000 });
   const lastUser = await page.evaluate(() => [...document.querySelectorAll('.msg.user')].at(-1).textContent);
   if (lastUser !== 'Да, запускай') fail(`по тапу отправлено «${lastUser}»`);
+
+  // The planner shows a published picture (2000×1200) and one already removed by the uploads cleanup.
+  const uploads = join(stateDir, 'web', 'uploads');
+  mkdirSync(uploads, { recursive: true });
+  writeFileSync(join(uploads, `${SHOWN}.png`), await gradientPng(2000, 1200));
+  process.env.FAKE_PARTS = JSON.stringify([
+    `Вот превью иконки:\n\n![Превью иконки](uploads/${SHOWN}.png)\n\nА эта уже удалена:\n\n![Старое превью](uploads/${GONE}.png)\n`,
+  ]);
+  await page.fill('#input', 'Покажи превью');
+  await page.click('#send-btn');
+  await page.waitForSelector('#send-btn:not(.hidden)', { timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll('.msg.assistant:not(.streaming)').length === 5, null, { timeout: 15_000 });
+  await page.evaluate(() => { const s = document.getElementById('chat-scroll'); s.scrollTop = s.scrollHeight; });
+  await page.waitForFunction(() => {
+    const last = [...document.querySelectorAll('.msg.assistant')].at(-1);
+    return last.querySelector('img')?.complete && last.querySelector('.img-gone');
+  }, null, { timeout: 5_000 }).catch(() => {});
+  const pic = await page.evaluate(() => {
+    const last = [...document.querySelectorAll('.msg.assistant')].at(-1);
+    const imgs = [...last.querySelectorAll('img')];
+    const r = imgs[0]?.getBoundingClientRect();
+    const box = last.getBoundingClientRect();
+    return {
+      imgs: imgs.map(i => i.getAttribute('src')), loaded: imgs[0]?.naturalWidth,
+      fits: r && r.right <= box.right + 0.5 && r.width > 0, tall: r && r.height <= innerHeight * 0.6 + 0.5,
+      radius: imgs[0] && getComputedStyle(imgs[0]).borderRadius,
+      gone: [...last.querySelectorAll('.img-gone')].map(n => n.textContent), onerror: document.querySelectorAll('[onerror]').length,
+    };
+  });
+  if (pic.imgs.length !== 1 || !pic.imgs[0].endsWith(`${SHOWN}.png`) || pic.loaded !== 2000) fail(`картинка в ответе: ${JSON.stringify(pic)}`);
+  if (!pic.fits || !pic.tall) fail(`картинка не вписана в ответ (ширина 100%, высота до 60vh): ${JSON.stringify(pic)}`);
+  if (pic.radius !== '10px') fail(`скругление картинки ${pic.radius}, нужно 10px как у миниатюр`);
+  if (pic.gone.join() !== 'Картинка удалена') fail(`заглушка удалённой картинки: ${JSON.stringify(pic.gone)}`);
+  if (pic.onerror) fail('на странице есть атрибут onerror');
+  await page.evaluate(() => [...document.querySelectorAll('.msg.assistant')].at(-1).scrollIntoView({ block: 'start' }));
+  await shot('planner-image');
 
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
