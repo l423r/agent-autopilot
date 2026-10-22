@@ -109,3 +109,41 @@ test('suggestion: markup stays plain text', () => {
   assert.deepEqual(splitSuggestion('Ответ\n<!-- suggest: <b>x</b> -->'),
     { body: 'Ответ', suggestion: '<b>x</b>' });
 });
+
+const UP = 'uploads/0b7e2c3a-1f4d-4e6a-9c8b-2d5f7a9e1c30.png';
+test('upload image → clickable thumbnail', () => {
+  assert.equal(renderMarkdown(`![Превью](${UP})`),
+    `<p><a href="${UP}" target="_blank" rel="noopener"><img src="${UP}" alt="Превью" loading="lazy"></a></p>`);
+});
+test('upload link → link', () => {
+  assert.equal(renderMarkdown(`[превью](${UP})`),
+    `<p><a href="${UP}" target="_blank" rel="noopener">превью</a></p>`);
+});
+test('upload image: every supported extension', () => {
+  for (const ext of ['jpg', 'png', 'webp', 'gif']) {
+    const p = UP.replace('.png', `.${ext}`);
+    assert.match(renderMarkdown(`![a](${p})`), new RegExp(`<img src="${p}"`), ext);
+  }
+});
+test('XSS: image urls other than uploads are not rendered', () => {
+  for (const src of ['![x](javascript:alert(1))', '![x](https://evil/x.png)', '![x](uploads/../state.json)',
+    '![x](uploads/0b7e2c3a-1f4d-4e6a-9c8b-2d5f7a9e1c30.svg)', '![x](/uploads/0b7e2c3a-1f4d-4e6a-9c8b-2d5f7a9e1c30.png)',
+    '[x](uploads/../state.json)']) {
+    const out = renderMarkdown(src);
+    assert.ok(!out.includes('<img'), out);
+    assert.ok(!/href="javascript/i.test(out), out);
+    assert.ok(!/src="https?:/i.test(out), out);
+    assert.ok(!/href="uploads\/\.\./.test(out), out);
+  }
+});
+test('XSS: quotes in image caption are escaped', () => {
+  const out = renderMarkdown(`![" onerror="x](${UP})`);
+  assert.ok(out.includes('alt="&quot; onerror=&quot;x"'), out);
+  // Only src, alt and loading attributes: no quote from the caption closes alt.
+  assert.match(out, /<img src="[^"]*" alt="[^"]*" loading="lazy">/);
+});
+test('image caption carries no markup', () => {
+  const out = renderMarkdown(`![\`a\` <b>](${UP})`);
+  assert.ok(out.includes('alt="a &lt;b&gt;"'), out);
+  assert.ok(!out.includes('\u0000'), JSON.stringify(out));
+});

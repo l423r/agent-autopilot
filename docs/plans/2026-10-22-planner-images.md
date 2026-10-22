@@ -28,12 +28,12 @@
 
 **Files:** Modify `web/markdown.mjs`; Test `test/web-markdown.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `![Превью](uploads/<uuid>.png)` → `<a href="uploads/<uuid>.png" target="_blank" rel="noopener"><img src="uploads/<uuid>.png" alt="Превью" loading="lazy"></a>`;
   - `[превью](uploads/<uuid>.png)` → `<a href="uploads/<uuid>.png" …>превью</a>`;
   - каждый ввод из Review Focus 1 → без `<img`, без `href="javascript`, без внешнего `src`; кавычки в подписи экранированы.
-- [ ] **Step 2:** `npm test` → FAIL; **Step 3:** реализовать (тот же механизм `hold/release`, что для `https`-ссылок).
-- [ ] **Step 4:** `npm test` → PASS. **Commit** — `feat(web): images from uploads in markdown`
+- [x] **Step 2:** `npm test` → FAIL; **Step 3:** реализовать (тот же механизм `hold/release`, что для `https`-ссылок).
+- [x] **Step 4:** `npm test` → PASS. **Commit** — `feat(web): images from uploads in markdown`
 
 ### Task 2: Скрипт публикации и правило для планировщика
 

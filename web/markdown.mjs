@@ -7,6 +7,8 @@ const escapeHtml = s => s.replace(/[&<>"']/g, c => ESC[c]);
 
 // Placeholder marker; stripped from the input so it can't be forged.
 const MARK = '\u0000';
+// A file published into <stateDir>/web/uploads (served at GET /uploads/<id>).
+const UPLOAD = 'uploads\\/[0-9a-f-]{36}\\.(?:jpg|png|webp|gif)';
 
 function inline(raw) {
   const held = [];
@@ -14,8 +16,12 @@ function inline(raw) {
   const release = str => str.replace(new RegExp(`${MARK}(\\d+)${MARK}`, 'g'), (_, i) => held[i]);
   let s = escapeHtml(raw.replaceAll(MARK, ''));
   s = s.replace(/`([^`\n]+)`/g, (_, c) => hold(`<code>${c}</code>`));
-  // Only http(s) links; the text part excludes '[' so scanning stays linear.
-  s = s.replace(/\[([^\[\]\n]*)\]\((https?:\/\/[^\s()]+)\)/g,
+  // Images only from the pult's own uploads (exact path, no external requests);
+  // the caption is plain text: held markup is released and its tags dropped.
+  s = s.replace(new RegExp(`!\\[([^\\[\\]\\n]*)\\]\\((${UPLOAD})\\)`, 'g'),
+    (_, t, url) => hold(`<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${release(t).replace(/<[^>]*>/g, '')}" loading="lazy"></a>`));
+  // Only http(s) and uploads links; the text part excludes '[' so scanning stays linear.
+  s = s.replace(new RegExp(`\\[([^\\[\\]\\n]*)\\]\\((https?:\\/\\/[^\\s()]+|${UPLOAD})\\)`, 'g'),
     (_, t, url) => hold(`<a href="${url}" target="_blank" rel="noopener">${release(t)}</a>`));
   s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
