@@ -62,7 +62,7 @@
 
 ### Task 5: Проверка результата
 
-- [ ] **Step 1:** `npm test` → PASS; `node scripts/web-screenshots.mjs` → OK; все снимки просмотрены (Read), регрессий v2 нет. Итог в журнал.
+- [x] **Step 1:** `npm test` → PASS; `node scripts/web-screenshots.mjs` → OK; все снимки просмотрены (Read), регрессий v2 нет. Итог в журнал.
 
 ### Task 6: Ревью кода свежим ревьюером
 
