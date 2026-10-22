@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Планировщик может показать пользователю картинку прямо в чате (превью иконок, скриншоты): она видна в ответе миниатюрой и открывается тапом.
+**Goal:** Планировщик может показать пользователю картинку прямо в чате (превью иконок, скриншоты): она видна в ответе миниатюрой и открывается тапом. Пользователь может вставить картинку в поле ввода из буфера обмена (Ctrl+V).
 
 **Architecture:** Планировщик публикует файл скриптом `web/share-image.mjs` — тот копирует его в `<stateDir>/web/uploads/<uuid>.<ext>` (уже раздаётся пультом по `GET /uploads/<id>`) и печатает Markdown-строку `![подпись](uploads/<id>)`. `web/markdown.mjs` превращает такие строки (и ссылки `[текст](uploads/<id>)`) в `<img>`/`<a>`; любые другие адреса картинок остаются текстом.
 
@@ -52,19 +52,28 @@
 - [ ] **Step 2:** Скрипт скриншотов: поддельный Claude отвечает строкой с картинкой 2000×1200 из загрузок и строкой с удалённой картинкой → снимок `web-planner-image.png`; проверки скрипта (нет горизонтальной прокрутки и т. д.) проходят.
 - [ ] **Step 3:** Просмотреть снимок (Read). **Commit** — `feat(web): planner images on the page`
 
-### Task 4: Проверка результата
+### Task 4: Вставка картинки из буфера обмена (Ctrl+V)
+
+**Files:** Modify `web/index.html`, `scripts/web-screenshots.mjs`, `README.md`
+
+- [ ] **Step 1:** Проверка в `scripts/web-screenshots.mjs` (Playwright), сейчас падает: фокус в поле ввода, событие `paste` с `DataTransfer`, в котором PNG-файл и текст → в поле ввода текст **не** вставлен дважды, появилась миниатюра, ушёл `POST api/upload`, кнопка отправки активна после загрузки; `paste` только с текстом → обычная вставка текста, миниатюр нет; вставка 5 картинок при лимите `MAX_IMAGES` → сообщение «Можно до N картинок в сообщении.», лишние не добавлены.
+- [ ] **Step 2:** Вынести из обработчика `#file-input` общую `addFiles(files)` (фильтр `image/*`, лимит `MAX_IMAGES`, `addImage`); обработчик `paste` на поле ввода: картинки из `clipboardData.files` (или `items` с `kind === 'file'`) → `addFiles`, `preventDefault()` только если картинки были. Не-картинки из буфера игнорируются (сервер принимает только jpg/png/webp/gif). Подсказка в `placeholder`/`title` поля на компьютере: «…или вставьте картинку (Ctrl+V)». README — одна строка.
+- [ ] **Step 3:** `node scripts/web-screenshots.mjs` → OK; `npm test` → PASS. **Commit** — `feat(web): paste images from clipboard`
+
+### Task 5: Проверка результата
 
 - [ ] **Step 1:** `npm test` → PASS; `node scripts/web-screenshots.mjs` → OK; все снимки просмотрены (Read), регрессий v2 нет. Итог в журнал.
 
-### Task 5: Ревью кода свежим ревьюером
+### Task 6: Ревью кода свежим ревьюером
 
 - [ ] **Step 1:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD; передать этот план с Global Constraints и Review Focus (каждую строку проверить отдельно) и журнал.
 - [ ] **Step 2:** Critical и Important — исправить через TDD; Minor — в журнал `minor (отложено): …`. `npm test` → PASS. **Commit** — `fix(web): planner images review findings`
 
-### Task 6: Финальный артефакт — выкладка пульта
+### Task 7: Финальный артефакт — выкладка пульта
 
 - [ ] **Step 1:** `GET 127.0.0.1:7690/api/history` → `busy: false`, затем `systemctl restart agent-autopilot-web`; `is-active` → `active`. Итог в журнал.
 
-### Task 7: [manual] Проверка с телефона
+### Task 8: [manual] Проверка с телефона и компьютера
 
 - [ ] **Step 1:** Планировщик публикует `/root/sigaret-counter/assets/icon-src/preview.png` скриптом и вставляет в ответ; пользователь видит превью в чате и открывает его тапом.
+- [ ] **Step 2:** Пользователь на компьютере копирует скриншот и вставляет его в поле чата Ctrl+V → миниатюра появилась, сообщение с картинкой отправляется, планировщик её видит.
