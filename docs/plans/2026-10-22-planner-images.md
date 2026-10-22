@@ -66,8 +66,8 @@
 
 ### Task 6: Ревью кода свежим ревьюером
 
-- [ ] **Step 1:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD; передать этот план с Global Constraints и Review Focus (каждую строку проверить отдельно) и журнал.
-- [ ] **Step 2:** Critical и Important — исправить через TDD; Minor — в журнал `minor (отложено): …`. `npm test` → PASS. **Commit** — `fix(web): planner images review findings`
+- [x] **Step 1:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD; передать этот план с Global Constraints и Review Focus (каждую строку проверить отдельно) и журнал.
+- [x] **Step 2:** Critical и Important — исправить через TDD; Minor — в журнал `minor (отложено): …`. `npm test` → PASS. **Commit** — `fix(web): planner images review findings`
 
 ### Task 7: Финальный артефакт — выкладка пульта
 
