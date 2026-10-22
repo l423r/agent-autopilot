@@ -2,12 +2,12 @@
 // Browser control panel: static page, chat with the planner (answers stream over SSE), plan and status,
 // pause/resume through the ntfy command topic. Listens on 127.0.0.1 only; Caddy adds the password.
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync, existsSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits } from './limits.mjs';
+import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
 import { parsePlan } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
@@ -19,9 +19,7 @@ const MAX_TEXT = 20_000;
 const MAX_BODY = 256 * 1024;
 const MAX_HISTORY_BYTES = 1024 * 1024 - 1024; // the freshest entries that fit; leaves room for the envelope
 const HEARTBEAT_MS = 25_000;
-const MAX_UPLOAD = 8 * 1024 * 1024;
 const MAX_IMAGES = 5;
-const KEEP_UPLOADS = 200;
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 const UPLOAD_ID = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
 const LIMITS_CACHE_MS = 60_000;
@@ -131,11 +129,7 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       if (!ext) return sendJson(res, 400, { error: 'Только картинки: JPEG, PNG, WebP, GIF' });
       if (!body) return sendJson(res, 413, { error: `Картинка больше ${MAX_UPLOAD / 1024 / 1024} МБ` });
       if (!body.length) return sendJson(res, 400, { error: 'Пустой файл' });
-      const id = `${randomUUID()}.${ext}`;
-      mkdirSync(uploadsDir, { recursive: true });
-      writeFileSync(join(uploadsDir, id), body);
-      pruneUploads(uploadsDir, KEEP_UPLOADS);
-      sendJson(res, 200, { id });
+      sendJson(res, 200, { id: saveUpload(uploadsDir, ext, body) });
     },
 
     'POST /api/stop': (req, res) => { chat.stop(); sendJson(res, 200, { ok: true }); },
@@ -285,15 +279,6 @@ async function readBody(req, limit) {
   return size > limit ? null : Buffer.concat(chunks);
 }
 
-// Keeps the `keep` newest uploads.
-function pruneUploads(dir, keep) {
-  const files = readdirSync(dir).flatMap(name => {
-    try { return [{ name, mtime: statSync(join(dir, name)).mtimeMs }]; } catch { return []; }
-  });
-  files.sort((a, b) => b.mtime - a.mtime);
-  for (const { name } of files.slice(keep)) rmSync(join(dir, name), { force: true });
-}
-
 async function readJson(req) {
   let size = 0;
   const chunks = [];
@@ -307,7 +292,7 @@ async function readJson(req) {
   try { return JSON.parse(text); } catch { throw badRequest('Неверный JSON'); }
 }
 
-function loadConfig() {
+export function loadConfig() {
   const path = process.env.AUTOPILOT_CONFIG ?? join(HERE, '..', 'config.json');
   const cfg = JSON.parse(readFileSync(path, 'utf8'));
   cfg.autopilotDir ??= resolve(HERE, '..');

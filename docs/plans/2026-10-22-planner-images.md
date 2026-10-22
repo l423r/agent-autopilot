@@ -39,10 +39,10 @@
 
 **Files:** Create `web/share-image.mjs`; Modify `web/planner-prompt.md`, `README.md`; Test `test/web-share-image.test.mjs`
 
-- [ ] **Step 1:** Падающий тест: `node web/share-image.mjs <png> "Подпись"` с `AUTOPILOT_CONFIG` на временный конфиг → файл появился в `<stateDir>/web/uploads/` с именем `<uuid>.png` и теми же байтами; stdout — ровно `![Подпись](uploads/<uuid>.png)`; не-картинка (по расширению `jpg|jpeg|png|webp|gif`) или файл > 8 МБ → код 1 и сообщение. Применяется тот же предел «последние 200 файлов», что у `/api/upload` (вынести общую функцию из `web/server.mjs`, если нужно).
-- [ ] **Step 2:** `npm test` → FAIL; **Step 3:** реализовать.
-- [ ] **Step 4:** `planner-prompt.md`: «Чтобы показать пользователю картинку (превью, скриншот), выполни `node /root/agent-autopilot/web/share-image.mjs <путь> "<подпись>"` и вставь напечатанную строку в ответ как есть». README — одна строка о том же.
-- [ ] **Step 5:** `npm test` → PASS. **Commit** — `feat(web): share-image script for the planner`
+- [x] **Step 1:** Падающий тест: `node web/share-image.mjs <png> "Подпись"` с `AUTOPILOT_CONFIG` на временный конфиг → файл появился в `<stateDir>/web/uploads/` с именем `<uuid>.png` и теми же байтами; stdout — ровно `![Подпись](uploads/<uuid>.png)`; не-картинка (по расширению `jpg|jpeg|png|webp|gif`) или файл > 8 МБ → код 1 и сообщение. Применяется тот же предел «последние 200 файлов», что у `/api/upload` (вынести общую функцию из `web/server.mjs`, если нужно).
+- [x] **Step 2:** `npm test` → FAIL; **Step 3:** реализовать.
+- [x] **Step 4:** `planner-prompt.md`: «Чтобы показать пользователю картинку (превью, скриншот), выполни `node /root/agent-autopilot/web/share-image.mjs <путь> "<подпись>"` и вставь напечатанную строку в ответ как есть». README — одна строка о том же.
+- [x] **Step 5:** `npm test` → PASS. **Commit** — `feat(web): share-image script for the planner`
 
 ### Task 3: Вид на странице
 
