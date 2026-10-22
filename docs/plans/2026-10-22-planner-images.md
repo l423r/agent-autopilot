@@ -71,7 +71,7 @@
 
 ### Task 7: Финальный артефакт — выкладка пульта
 
-- [ ] **Step 1:** `GET 127.0.0.1:7690/api/history` → `busy: false`, затем `systemctl restart agent-autopilot-web`; `is-active` → `active`. Итог в журнал.
+- [x] **Step 1:** `GET 127.0.0.1:7690/api/history` → `busy: false`, затем `systemctl restart agent-autopilot-web`; `is-active` → `active`. Итог в журнал.
 
 ### Task 8: [manual] Проверка с телефона и компьютера
 
