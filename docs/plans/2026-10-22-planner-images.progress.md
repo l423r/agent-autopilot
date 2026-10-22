@@ -14,3 +14,4 @@
 - minor (отложено): share-image на каталог с именем `x.png` падает со стеком EISDIR вместо своего сообщения (web/share-image.mjs)
 - 2026-10-22 22:55 Task 6: сделано — субагент-ревьюер (opus) проверил de2ffe2..e642816 по плану, Global Constraints и Review Focus: все 3 пункта Review Focus PASS (проверены запуском renderMarkdown и web-screenshots), Critical/Important нет, 7 Minor записаны как отложенные; npm test 226/226, кода не меняли
 - 2026-10-22 22:55 Task 7: сделано — /api/history busy:false, `systemctl restart agent-autopilot-web` (22:55:44), is-active → active, страница 200 и отдаёт новую версию (Ctrl+V-подсказка, uploads в markdown.mjs); демон agent-autopilot не трогали
+- 2026-10-22 23:33 Task 8: сделано — пользователь: превью от планировщика видно в чате и открывается; Ctrl+V с компьютера пользователь проверит позже (не проверено)
