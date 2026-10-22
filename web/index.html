@@ -370,13 +370,17 @@ function setBusy(on) {
 // The planner's likely next message: the field's placeholder and a one-tap button above it.
 // Only for the last answer; hidden while it streams and once the user starts typing.
 let suggestion = null;
+// On a computer (mouse) the field hints that a screenshot can be pasted.
+const DESKTOP = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const PLACEHOLDER = DESKTOP ? 'Сообщение… или вставьте картинку (Ctrl+V)' : 'Сообщение';
+if (DESKTOP) $('input').title = 'Можно вставить картинку (Ctrl+V)';
 function setSuggestion(text) {
   suggestion = text;
   updateSuggestion();
 }
 function updateSuggestion() {
   const show = Boolean(suggestion && !busy);
-  $('input').placeholder = show ? suggestion : 'Сообщение';
+  $('input').placeholder = show ? suggestion : PLACEHOLDER;
   $('suggest-btn').textContent = show ? `↵ ${suggestion}` : '';
   $('suggest-btn').classList.toggle('hidden', !show || Boolean($('input').value));
 }
@@ -523,15 +527,30 @@ async function addImage(file) {
   updateSend();
 }
 
-$('file-input').addEventListener('change', ev => {
-  const files = [...ev.target.files].filter(f => f.type.startsWith('image/'));
-  ev.target.value = '';
+// Pictures from 📎 or the clipboard; returns how many of the given files were pictures.
+function addFiles(list) {
+  const files = [...list].filter(f => f.type.startsWith('image/'));
   const room = MAX_IMAGES - attachments.length;
   if (files.length > room) {
     msgs.append(bubble('error', `Можно до ${MAX_IMAGES} картинок в сообщении.`));
     toBottom();
   }
   for (const f of files.slice(0, Math.max(0, room))) addImage(f);
+  return files.length;
+}
+
+$('file-input').addEventListener('change', ev => {
+  addFiles(ev.target.files);
+  ev.target.value = '';
+});
+
+// Ctrl+V of a screenshot: the pictures go to the attachments; text without pictures pastes as usual.
+input.addEventListener('paste', ev => {
+  const data = ev.clipboardData;
+  if (!data) return;
+  let files = [...data.files];
+  if (!files.length) files = [...data.items].filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
+  if (addFiles(files)) ev.preventDefault();
 });
 
 /* ---------- @project picker ---------- */

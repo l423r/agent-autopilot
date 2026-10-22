@@ -257,6 +257,44 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('.msg.assistant')].at(-1).scrollIntoView({ block: 'start' }));
   await shot('planner-image');
 
+  // Ctrl+V into the field: pictures from the clipboard become thumbnails and are uploaded; plain text pastes as usual.
+  const pasted = await gradientPng(400, 300);
+  const uploadPosts = [];
+  page.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname.endsWith('/api/upload')) uploadPosts.push(r.url()); });
+  const paste = (count, text) => page.evaluate(([b64, n, t]) => {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    for (let i = 0; i < n; i++) dt.items.add(new File([bytes], `clip-${i}.png`, { type: 'image/png' }));
+    if (t) dt.setData('text/plain', t);
+    const input = document.getElementById('input');
+    input.focus();
+    const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    return { prevented: ev.defaultPrevented, value: input.value };
+  }, [pasted.toString('base64'), count, text]);
+  const thumbsSettled = n => page.waitForFunction(k => document.querySelectorAll('#pending .thumb').length === k
+    && !document.querySelector('#pending .thumb.loading'), n, { timeout: 10_000 });
+  await page.fill('#input', '');
+  const withText = await paste(1, 'image.png');
+  if (!withText.prevented || withText.value !== '') fail(`вставка картинки с текстом: ${JSON.stringify(withText)}`);
+  await thumbsSettled(1).catch(() => fail('после вставки картинки нет миниатюры'));
+  if (uploadPosts.length !== 1) fail(`после вставки картинки запросов api/upload: ${uploadPosts.length}`);
+  if (await page.isDisabled('#send-btn')) fail('«Отправить» неактивна после загрузки вставленной картинки');
+  await shot('chat-image-pasted');
+  const onlyText = await paste(0, 'просто текст');
+  if (onlyText.prevented) fail('вставка текста без картинки отменена');
+  if ((await page.$$('#pending .thumb')).length !== 1) fail('вставка текста добавила миниатюру');
+  const errorsBefore = await page.$$eval('.msg.error', ns => ns.length);
+  await paste(5);
+  await thumbsSettled(5).catch(() => {});
+  const over = await page.evaluate(() => ({
+    thumbs: document.querySelectorAll('#pending .thumb').length,
+    errors: [...document.querySelectorAll('.msg.error')].map(n => n.textContent),
+  }));
+  if (over.thumbs !== 5) fail(`после вставки сверх лимита миниатюр ${over.thumbs}, нужно 5`);
+  if (over.errors.length !== errorsBefore + 1 || over.errors.at(-1) !== 'Можно до 5 картинок в сообщении.') fail(`сообщение о лимите: ${JSON.stringify(over.errors)}`);
+  while (await page.$('#pending .thumb .x')) await page.click('#pending .thumb .x');
+
   await page.click('nav.tabs button[data-tab="plan"]');
   await page.waitForSelector('#projects .project.active .card-head');
   const names = await page.$$eval('#projects .project .pname', ns => ns.map(n => n.textContent));

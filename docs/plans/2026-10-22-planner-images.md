@@ -56,9 +56,9 @@
 
 **Files:** Modify `web/index.html`, `scripts/web-screenshots.mjs`, `README.md`
 
-- [ ] **Step 1:** Проверка в `scripts/web-screenshots.mjs` (Playwright), сейчас падает: фокус в поле ввода, событие `paste` с `DataTransfer`, в котором PNG-файл и текст → в поле ввода текст **не** вставлен дважды, появилась миниатюра, ушёл `POST api/upload`, кнопка отправки активна после загрузки; `paste` только с текстом → обычная вставка текста, миниатюр нет; вставка 5 картинок при лимите `MAX_IMAGES` → сообщение «Можно до N картинок в сообщении.», лишние не добавлены.
-- [ ] **Step 2:** Вынести из обработчика `#file-input` общую `addFiles(files)` (фильтр `image/*`, лимит `MAX_IMAGES`, `addImage`); обработчик `paste` на поле ввода: картинки из `clipboardData.files` (или `items` с `kind === 'file'`) → `addFiles`, `preventDefault()` только если картинки были. Не-картинки из буфера игнорируются (сервер принимает только jpg/png/webp/gif). Подсказка в `placeholder`/`title` поля на компьютере: «…или вставьте картинку (Ctrl+V)». README — одна строка.
-- [ ] **Step 3:** `node scripts/web-screenshots.mjs` → OK; `npm test` → PASS. **Commit** — `feat(web): paste images from clipboard`
+- [x] **Step 1:** Проверка в `scripts/web-screenshots.mjs` (Playwright), сейчас падает: фокус в поле ввода, событие `paste` с `DataTransfer`, в котором PNG-файл и текст → в поле ввода текст **не** вставлен дважды, появилась миниатюра, ушёл `POST api/upload`, кнопка отправки активна после загрузки; `paste` только с текстом → обычная вставка текста, миниатюр нет; вставка 5 картинок при лимите `MAX_IMAGES` → сообщение «Можно до N картинок в сообщении.», лишние не добавлены.
+- [x] **Step 2:** Вынести из обработчика `#file-input` общую `addFiles(files)` (фильтр `image/*`, лимит `MAX_IMAGES`, `addImage`); обработчик `paste` на поле ввода: картинки из `clipboardData.files` (или `items` с `kind === 'file'`) → `addFiles`, `preventDefault()` только если картинки были. Не-картинки из буфера игнорируются (сервер принимает только jpg/png/webp/gif). Подсказка в `placeholder`/`title` поля на компьютере: «…или вставьте картинку (Ctrl+V)». README — одна строка.
+- [x] **Step 3:** `node scripts/web-screenshots.mjs` → OK; `npm test` → PASS. **Commit** — `feat(web): paste images from clipboard`
 
 ### Task 5: Проверка результата
 
