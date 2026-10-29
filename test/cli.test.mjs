@@ -571,3 +571,49 @@ test('model: invalid defaultModel stops the autopilot from starting', async () =
   await assert.rejects(exec(root, ['once'], 'tick'), err => /defaultModel: допустимо haiku, sonnet, opus/.test(err.stderr));
   assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /- \[ \]/);
 });
+
+test('task models end to end: once ×3 with fake-claude.sh → run log, runs.jsonl, stats', async () => {
+  const fakeSh = fileURLToPath(new URL('./fixtures/fake-claude.sh', import.meta.url));
+  const root = tempDir('ap-models-');
+  writeFileSync(join(root, 'plan.md'), `## Этап 1. Модели
+### Task 1: Данные · model: haiku
+- [ ] s
+### Task 2: Логика | model: Sonnet
+- [ ] s
+### Task 3: Без пометки
+- [ ] s
+`);
+  writeFileSync(join(root, 'progress.md'), '');
+  const cfg = {
+    ...JSON.parse(readFileSync(join(repo, 'config.example.json'), 'utf8')),
+    projects: undefined, projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
+    autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'),
+  };
+  writeFileSync(join(root, 'config.json'), JSON.stringify(cfg));
+  const env = { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fakeSh, FAKE_PLAN: join(root, 'plan.md') };
+  for (let i = 0; i < 3; i++) await run('node', [cli, 'once'], { env, timeout: 30_000 });
+
+  const log = readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8');
+  assert.match(log, /run Task 1 \(haiku, попытка 1\): Данные\n/);
+  assert.match(log, /run Task 2 \(sonnet, попытка 1\): Логика\n/);
+  assert.match(log, /run Task 3: Без пометки\n/);
+  assert.doesNotMatch(readFileSync(join(root, 'plan.md'), 'utf8'), /- \[ \]/);
+
+  const runs = readFileSync(join(root, 'logs', 'runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(runs.map(r => [r.task, r.model, r.attempt, r.result, r.done]), [
+    ['Task 1', 'haiku', 1, 'ok', true], ['Task 2', 'sonnet', 1, 'ok', true], ['Task 3', null, 1, 'ok', true],
+  ]);
+  assert.equal(runs[0].costUsd, 0.42);
+  assert.equal(runs[0].tokens.output, 20);
+
+  const iterLogs = readdirSync(join(root, 'logs')).filter(f => f.startsWith('iter-')).sort()
+    .map(f => readFileSync(join(root, 'logs', f), 'utf8'));
+  assert.match(iterLogs.find(t => t.includes('Task 1')), /--model haiku/);
+  assert.doesNotMatch(iterLogs.find(t => t.includes('Task 3')), /--model/);
+
+  const { stdout } = await run('node', [cli, 'stats'], { env, timeout: 30_000 });
+  assert.match(stdout, /haiku/);
+  assert.match(stdout, /sonnet/);
+  assert.match(stdout, /по умолчанию/);
+  assert.doesNotMatch(stdout, /пропущено строк/);
+});
