@@ -40,3 +40,29 @@ test('tasks report their step counts', () => {
   assert.equal(p.tasks[0].boxes, 3);
   assert.equal(p.tasks[0].checked, 2);
 });
+
+test('model mark in task heading', () => {
+  const t = md => parsePlan(md).tasks[0];
+  assert.deepEqual(
+    (({ title, model }) => ({ title, model }))(t('### Task 4: Заявки · model: sonnet')),
+    { title: 'Заявки', model: 'sonnet' },
+  );
+  assert.equal(t('### Task 5: Фото | MODEL: Opus').model, 'opus');
+  const m = t('### Task 9: Выкладка [manual] · model: haiku');
+  assert.equal(m.manual, true);
+  assert.equal(m.model, 'haiku');
+  assert.equal(m.title, 'Выкладка');
+  const plain = t('### Task 6: Модель данных');
+  assert.equal(plain.model, null);
+  assert.equal(plain.title, 'Модель данных');
+  const bad = t('### Task 7: Выбор · model: gpt');
+  assert.equal(bad.model, null);
+  assert.match(bad.title, /model: gpt/);
+});
+
+test('model mark before [manual] is also parsed', () => {
+  const t = parsePlan('### Task 9: Выкладка · model: haiku [manual]').tasks[0];
+  assert.equal(t.manual, true);
+  assert.equal(t.model, 'haiku');
+  assert.equal(t.title, 'Выкладка');
+});

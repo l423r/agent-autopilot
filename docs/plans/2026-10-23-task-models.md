@@ -35,15 +35,15 @@
 
 **Interfaces:** Produces: у каждой задачи `parsePlan` поле `model: 'haiku'|'sonnet'|'opus'|null`; `title` без пометки.
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `### Task 4: Заявки · model: sonnet` → `{ title: 'Заявки', model: 'sonnet' }`;
   - `### Task 5: Фото | MODEL: Opus` → `model: 'opus'`;
   - `### Task 9: Выкладка [manual] · model: haiku` → `manual: true`, `model: 'haiku'`, `title: 'Выкладка'`;
   - `### Task 6: Модель данных` → `model: null`, `title: 'Модель данных'`;
   - `### Task 7: Выбор · model: gpt` → `model: null`, `title` содержит `model: gpt`.
-- [ ] **Step 2:** `npm test` → FAIL.
-- [ ] **Step 3:** В `parsePlan` регулярное `/\s*[·|]\s*model:\s*(haiku|sonnet|opus)\s*$/i` применяется к заголовку до разбора `[manual]` и после него (пометки в любом порядке).
-- [ ] **Step 4:** `npm test` → PASS. **Commit:** `feat: пометка модели в заголовке задачи`
+- [x] **Step 2:** `npm test` → FAIL.
+- [x] **Step 3:** В `parsePlan` регулярное `/\s*[·|]\s*model:\s*(haiku|sonnet|opus)\s*$/i` применяется к заголовку до разбора `[manual]` и после него (пометки в любом порядке).
+- [x] **Step 4:** `npm test` → PASS. **Commit:** `feat: пометка модели в заголовке задачи`
 
 ### Task 2: Выбор модели и повышение при неудаче · model: opus
 
