@@ -717,7 +717,7 @@ function renderTasks(list, p, open) {
     head.type = 'button';
     head.append(el('span', 'box', t.done ? '✓' : ''));
     const title = el('span', 'title', `${t.id}: ${t.title}`);
-    title.append(el('div', 'meta', `${t.checked}/${t.boxes} шагов${t.manual ? ' · вручную' : ''}`));
+    title.append(el('div', 'meta', `${t.checked}/${t.boxes} шагов${t.model ? ` · ${t.model}` : ''}${t.manual ? ' · вручную' : ''}`));
     head.append(title);
     const body = el('div', 'body md hidden');
     head.addEventListener('click', () => {

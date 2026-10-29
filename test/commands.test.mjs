@@ -91,3 +91,10 @@ test('statusText shows progress and next task', () => {
   const lines = text.split('\n').length;
   assert.ok(lines >= 2 && lines <= 4, `lines: ${lines}`);
 });
+
+test('statusText: модель текущей задачи', () => {
+  const plan = parsePlan('### Task 4: Заявки · model: sonnet\n- [ ] s');
+  const running = { ...idle, status: 'running', currentTask: 'Task 4' };
+  assert.match(statusText({ ...running, currentModel: 'sonnet' }, plan), /^Текущая задача: Task 4 \(sonnet\)$/m);
+  assert.match(statusText(running, plan), /^Текущая задача: Task 4$/m);
+});

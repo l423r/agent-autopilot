@@ -546,3 +546,10 @@ test('a malformed request URL gets 400 and does not bring the server down', asyn
   assert.match(reply, /^HTTP\/1\.1 400/);
   assert.equal((await get('/api/history')).status, 200);
 });
+
+test('GET /api/plan: модель из пометки, в названии её нет', async () => {
+  writeFileSync(join(root, 'plan.md'), '### Task 1: Заявки · model: sonnet\n- [ ] s\n### Task 2: Выкладка [manual] · model: haiku\n- [ ] s\n### Task 3: Без пометки\n- [ ] s\n');
+  await start();
+  const p = await json(await get('/api/plan'));
+  assert.deepEqual(p.tasks.map(t => [t.title, t.model]), [['Заявки', 'sonnet'], ['Выкладка', 'haiku'], ['Без пометки', null]]);
+});

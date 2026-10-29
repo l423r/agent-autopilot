@@ -91,10 +91,10 @@
 
 **Interfaces:** Consumes: `task.model` (Task 1), `state.currentModel` (Task 2).
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `statusText` при `status: 'running'`, `currentTask: 'Task 4'`, `currentModel: 'sonnet'` → строка `Текущая задача: Task 4 (sonnet)`; без модели — как сейчас;
   - `GET /api/plan` для плана с пометками → у задачи `model: 'sonnet'`, `title` без пометки.
-- [ ] **Step 2:** FAIL. **Step 3:** В карточке задачи пульта в строке `meta`: `3/5 шагов · sonnet` (и `· вручную`). В статусе — модель текущей задачи. **Step 4:** PASS. **Commit:** `feat: модель задачи в статусе и пульте`
+- [x] **Step 2:** FAIL. **Step 3:** В карточке задачи пульта в строке `meta`: `3/5 шагов · sonnet` (и `· вручную`). В статусе — модель текущей задачи. **Step 4:** PASS. **Commit:** `feat: модель задачи в статусе и пульте`
 
 ### Task 5: Правила для планировщика · model: haiku
 
