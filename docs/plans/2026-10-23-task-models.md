@@ -68,62 +68,6 @@
   - рестарт посреди попытки: состояние `attempts: { 'Task 4': 1 }` (попытка 1 засчитана `markRunning`, демон умер) → следующий запуск `attempt = 2` → модель на ступень выше.
 - [x] **Step 2:** FAIL. **Step 3:** Реализовать. **Step 4:** `npm test` → PASS. **Commit:** `feat: модель на задачу с повышением при неудаче`
 
-### Task 4: Заявки · model: sonnet` (разделитель `·` или `|`, пробелы любые). Другой текст после `model:` пометкой не считается и остаётся в названии.
-- Лестница повышения: `haiku → sonnet → opus`. Попытка N (с 1) идёт на ступень `базовая + (N − 1)`, но не выше `opus`. Повышают только попытки, которые засчитываются в `attempts` (ошибка, таймаут). Лимит и авторизация попытку не засчитывают, поэтому модель не меняют.
-- Нет пометки и нет `cfg.defaultModel` → флаг `--model` не передаётся (как сейчас); повышения нет.
-- `cfg.defaultModel` — необязательное поле `config.json`, одно из трёх значений; неверное значение → автопилот не стартует, сообщение «defaultModel: допустимо haiku, sonnet, opus».
-- Старые планы без пометок работают как раньше. Все существующие тесты остаются зелёными.
-- `git push` в задачах не делать. Журнал — `docs/plans/2026-10-23-task-models.progress.md`.
-
-## Review Focus
-
-1. Заголовок `### Task 9: Выкладка [manual] · model: haiku` → `manual: true`, `model: 'haiku'`, название «Выкладка» (порядок пометок любой). → Task 1.
-2. Демон перезапустился посреди попытки (попытка уже засчитана в `markRunning`) → следующая попытка идёт на следующей ступени, а не повторяет прежнюю. → Task 2.
-3. Вывод Claude без JSON-результата (таймаут, `spawn error`) → строка в `runs.jsonl` всё равно пишется, `tokens`/`costUsd` = `null`, `stats` не падает. → Task 3.
-4. Пометка в плане, который пульт показывает: модель видна в карточке задачи, а в названии её нет. → Task 4.
-5. `runs.jsonl` повреждён (обрезанная строка) → `stats` пропускает её и сообщает «пропущено строк: 1». → Task 3.
-
----
-
-### Task 1: Пометка модели в плане · model: sonnet
-
-**Files:** Modify `lib/plan.mjs`; Test `test/plan.test.mjs`
-
-**Interfaces:** Produces: у каждой задачи `parsePlan` поле `model: 'haiku'|'sonnet'|'opus'|null`; `title` без пометки.
-
-- [x] **Step 1:** Падающие тесты:
-  - `### Task 4: Заявки · model: sonnet` → `{ title: 'Заявки', model: 'sonnet' }`;
-  - `### Task 5: Фото | MODEL: Opus` → `model: 'opus'`;
-  - `### Task 9: Выкладка [manual] · model: haiku` → `manual: true`, `model: 'haiku'`, `title: 'Выкладка'`;
-  - `### Task 6: Модель данных` → `model: null`, `title: 'Модель данных'`;
-  - `### Task 7: Выбор · model: gpt` → `model: null`, `title` содержит `model: gpt`.
-- [x] **Step 2:** `npm test` → FAIL.
-- [x] **Step 3:** В `parsePlan` регулярное `/\s*[·|]\s*model:\s*(haiku|sonnet|opus)\s*$/i` применяется к заголовку до разбора `[manual]` и после него (пометки в любом порядке).
-- [x] **Step 4:** `npm test` → PASS. **Commit:** `feat: пометка модели в заголовке задачи`
-
-### Task 2: Выбор модели и повышение при неудаче · model: opus
-
-**Files:** Create `lib/models.mjs`, `test/models.test.mjs`. Modify `lib/runner.mjs`, `lib/decide.mjs` (`markRunning`), `autopilot.mjs` (`step`, `loadConfig`), `test/runner.test.mjs`, `test/decide.test.mjs`.
-
-**Interfaces:**
-- Produces:
-  - `MODELS = ['haiku', 'sonnet', 'opus']`;
-  - `modelFor(task, attempt: number, cfg): string|null` — `attempt` — номер текущей попытки с 1;
-  - `validateModelConfig(cfg): void` — бросает `Error('defaultModel: допустимо haiku, sonnet, opus')`;
-  - `runIteration({ ..., model })` — при `model` добавляет `'--model', model` в аргументы;
-  - `markRunning(state, task, now, model)` — сохраняет `state.currentModel = model`;
-  - `step()` вычисляет `attempt = (state.attempts[task.id] ?? 0) + 1` (до `markRunning`), `model = modelFor(task, attempt, cfg)`. Лог: `run Task 4 (sonnet, попытка 2): Заявки`, без модели — как сейчас.
-- Уведомление «Task N готова»: в тексте добавляется `· <модель>`, если модель была.
-
-- [x] **Step 1:** Падающие тесты:
-  - `modelFor({ model: 'haiku' }, 1, {}) === 'haiku'`, попытка 2 → `'sonnet'`, попытка 3 → `'opus'`, попытка 5 → `'opus'`;
-  - `modelFor({ model: 'sonnet' }, 2, {}) === 'opus'`;
-  - `modelFor({ model: null }, 3, {}) === null`; `modelFor({ model: null }, 1, { defaultModel: 'sonnet' }) === 'sonnet'`, попытка 2 → `'opus'`;
-  - `validateModelConfig({ defaultModel: 'gpt' })` бросает с текстом; `{}` — не бросает;
-  - `runIteration` с `model: 'haiku'` и подставным `claudeBin` (скрипт, печатающий свои аргументы) → в выводе есть `--model haiku`; без `model` — нет `--model`;
-  - рестарт посреди попытки: состояние `attempts: { 'Task 4': 1 }` (попытка 1 засчитана `markRunning`, демон умер) → следующий запуск `attempt = 2` → модель на ступень выше.
-- [x] **Step 2:** FAIL. **Step 3:** Реализовать. **Step 4:** `npm test` → PASS. **Commit:** `feat: модель на задачу с повышением при неудаче`
-
 ### Task 3: Журнал запусков и `stats` · model: sonnet
 
 **Files:** Create `lib/runs.mjs`, `test/runs.test.mjs`. Modify `lib/classify.mjs` (экспорт `usageOf`), `autopilot.mjs` (запись после запуска, команда `stats`), `README.md` (раздел «Логи» и «Команды»).
@@ -135,11 +79,11 @@
   - `summarizeRuns(lines: string[]): { byModel: { [model|'по умолчанию']: { runs, ok, done, avgDurationSec, totalCostUsd, tokensOut } }, skipped: number }`;
   - `node autopilot.mjs stats [--plan <имя файла плана>]` — таблица по моделям: запусков, успешных (задача закрыта), средняя длительность, стоимость, выходные токены; в конце «пропущено строк: N», если N > 0.
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `usageOf` на фикстуре `{"type":"result","is_error":false,"total_cost_usd":0.42,"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40}}` → `costUsd: 0.42`, `tokens.output: 20`; на `spawn error: ENOENT` → `{ tokens: null, costUsd: null }`;
   - `summarizeRuns` на трёх строках (haiku ok+done, haiku error, sonnet ok+done) → `haiku.runs = 2`, `haiku.done = 1`, `sonnet.done = 1`; обрезанная строка → `skipped: 1`;
   - `stats` на пустом журнале печатает «Запусков пока нет».
-- [ ] **Step 2:** FAIL. **Step 3:** Реализовать. Запись в журнал — в `step()` после `classify`, для каждого запуска, включая неудачные. **Step 4:** PASS. **Commit:** `feat: журнал запусков по моделям и команда stats`
+- [x] **Step 2:** FAIL. **Step 3:** Реализовать. Запись в журнал — в `step()` после `classify`, для каждого запуска, включая неудачные. **Step 4:** PASS. **Commit:** `feat: журнал запусков по моделям и команда stats`
 
 ### Task 4: Модель в статусе и в пульте · model: sonnet
 
