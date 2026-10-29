@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Autopilot CLI: run | once | status | resume
+// Autopilot CLI: run | once | status | resume | stats
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parsePlan, nextTask } from './lib/plan.mjs';
-import { classify } from './lib/classify.mjs';
+import { classify, usageOf } from './lib/classify.mjs';
 import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
@@ -14,6 +14,7 @@ import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, validateModelConfig } from './lib/models.mjs';
+import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,19 @@ async function step(cfg) {
   commands.busy = false;
   logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
   const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
+  try {
+    appendRun(cfg.logDir, {
+      at: finishedAt.toISOString(),
+      project: projectByDir(cfg, cfg.projectDir)?.name ?? basename(cfg.projectDir),
+      plan: basename(cfg.planPath),
+      task: d.task.id, title: d.task.title, model, attempt,
+      result: result.kind, done: Boolean(finished),
+      durationSec: Math.round((finishedAt - now) / 1000),
+      ...usageOf(raw.output ?? ''),
+    });
+  } catch (err) {
+    logEvent(cfg, `runs.jsonl не записан: ${err.message}`);
+  }
   if (cfg.pushAfterTask && finished) pushProject(cfg, d.task);
   if (finished && cfg.notifyEachTask) {
     await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, `${d.task.title}${model ? ` · ${model}` : ''}`), tags: 'heavy_check_mark', priority: 2, actions: buttonsFor('task') });
@@ -304,6 +318,15 @@ function status(cfg) {
   ].join('\n'));
 }
 
+function stats(cfg, args) {
+  const i = args.indexOf('--plan');
+  const plan = i === -1 ? null : basename(args[i + 1] ?? '');
+  let lines = [];
+  try { lines = readFileSync(runsFile(cfg.logDir), 'utf8').split('\n'); } catch { /* no runs yet */ }
+  if (plan) lines = lines.filter(l => { try { return JSON.parse(l).plan === plan; } catch { return true; } });
+  console.log(statsText(summarizeRuns(lines)));
+}
+
 function doResume(cfg) {
   const s = loadState(cfg.stateDir);
   saveState(cfg.stateDir, { ...resume(s), updatedAt: new Date().toISOString() });
@@ -320,7 +343,8 @@ if (cmd === 'run') await runLoop(cfg, false);
 else if (cmd === 'once') await runLoop(cfg, true);
 else if (cmd === 'status') status(cfg);
 else if (cmd === 'resume') doResume(cfg);
+else if (cmd === 'stats') stats(cfg, process.argv.slice(3));
 else {
-  console.log('Использование: autopilot.mjs run | once | status | resume');
+  console.log('Использование: autopilot.mjs run | once | status | resume | stats [--plan <файл плана>]');
   process.exitCode = 2;
 }

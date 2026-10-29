@@ -46,6 +46,7 @@ echo 'EXPO_TOKEN=...' >> /root/.config/agent-autopilot.env   # если прое
 | `node autopilot.mjs resume` | снять остановку (`done`/`halted`/`paused`/`waiting-user`/`auth`), сбросить счётчики попыток и запустить службу |
 | `node autopilot.mjs once` | один шаг вручную |
 | `node autopilot.mjs run` | цикл (так запускает systemd) |
+| `node autopilot.mjs stats [--plan <файл плана>]` | сводка `logs/runs.jsonl` по моделям: запусков, задача закрыта, среднее время, стоимость, выходные токены; `--plan` — только запуски этого плана (по имени файла); повреждённые строки пропускаются («пропущено строк: N») |
 
 ## Управление с телефона
 
@@ -96,6 +97,7 @@ bash /root/agent-autopilot/scripts/setup-web.sh
 
 - `logs/autopilot.log` — по строке на событие.
 - `logs/iter-<время>-<задача>.log` — полный вывод каждой итерации Claude.
+- `logs/runs.jsonl` — по строке JSON на каждый запуск Claude, включая неудачные: `{ at, project, plan, task, title, model, attempt, result, done, durationSec, tokens, costUsd }`. `model` — `null`, если `--model` не передавался; `tokens`/`costUsd` — `null`, если Claude не напечатал JSON-результат (таймаут, ошибка запуска). Сводка — `node autopilot.mjs stats`.
 - `journalctl -u agent-autopilot` — вывод службы.
 - `state/state.json` — текущее состояние.
 
