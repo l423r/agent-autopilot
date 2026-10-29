@@ -114,8 +114,8 @@
 
 ### Task 7: Ревью свежим ревьюером · model: opus
 
-- [ ] **Step 1:** superpowers:requesting-code-review — отдельный субагент на изменения этого плана (`git diff` от коммита до Task 1). Фокус — Review Focus выше и обратная совместимость со старыми планами и `state.json` без `currentModel`.
-- [ ] **Step 2:** Critical/Important — через TDD, Minor — в progress. `npm test` → PASS. **Commit:** `fix: замечания ревью`
+- [x] **Step 1:** superpowers:requesting-code-review — отдельный субагент на изменения этого плана (`git diff` от коммита до Task 1). Фокус — Review Focus выше и обратная совместимость со старыми планами и `state.json` без `currentModel`.
+- [x] **Step 2:** Critical/Important — через TDD, Minor — в progress. `npm test` → PASS. **Commit:** `fix: замечания ревью`
 
 ### Task 8: [manual] Включение
 
