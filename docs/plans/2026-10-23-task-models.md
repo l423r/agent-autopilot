@@ -121,5 +121,5 @@
 
 Выполняет планировщик (автопилот не перезапускает сам себя):
 
-- [ ] **Step 1:** Дождаться паузы между задачами, `systemctl restart agent-autopilot agent-autopilot-web`, проверить `node autopilot.mjs status` и карточки задач в пульте.
-- [ ] **Step 2:** Расставить пометки моделей в незавершённых задачах очередных планов (svoydev `docs/superpowers/plans/2026-10-28-domain-seo-content.md`), обновить память (правила выбора модели).
+- [x] **Step 1:** Дождаться паузы между задачами, `systemctl restart agent-autopilot agent-autopilot-web`, проверить `node autopilot.mjs status` и карточки задач в пульте.
+- [x] **Step 2:** Расставить пометки моделей в незавершённых задачах очередных планов (svoydev `docs/superpowers/plans/2026-10-28-domain-seo-content.md`), обновить память (правила выбора модели).
