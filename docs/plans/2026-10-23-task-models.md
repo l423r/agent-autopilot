@@ -59,14 +59,14 @@
   - `step()` вычисляет `attempt = (state.attempts[task.id] ?? 0) + 1` (до `markRunning`), `model = modelFor(task, attempt, cfg)`. Лог: `run Task 4 (sonnet, попытка 2): Заявки`, без модели — как сейчас.
 - Уведомление «Task N готова»: в тексте добавляется `· <модель>`, если модель была.
 
-- [ ] **Step 1:** Падающие тесты:
+- [x] **Step 1:** Падающие тесты:
   - `modelFor({ model: 'haiku' }, 1, {}) === 'haiku'`, попытка 2 → `'sonnet'`, попытка 3 → `'opus'`, попытка 5 → `'opus'`;
   - `modelFor({ model: 'sonnet' }, 2, {}) === 'opus'`;
   - `modelFor({ model: null }, 3, {}) === null`; `modelFor({ model: null }, 1, { defaultModel: 'sonnet' }) === 'sonnet'`, попытка 2 → `'opus'`;
   - `validateModelConfig({ defaultModel: 'gpt' })` бросает с текстом; `{}` — не бросает;
   - `runIteration` с `model: 'haiku'` и подставным `claudeBin` (скрипт, печатающий свои аргументы) → в выводе есть `--model haiku`; без `model` — нет `--model`;
   - рестарт посреди попытки: состояние `attempts: { 'Task 4': 1 }` (попытка 1 засчитана `markRunning`, демон умер) → следующий запуск `attempt = 2` → модель на ступень выше.
-- [ ] **Step 2:** FAIL. **Step 3:** Реализовать. **Step 4:** `npm test` → PASS. **Commit:** `feat: модель на задачу с повышением при неудаче`
+- [x] **Step 2:** FAIL. **Step 3:** Реализовать. **Step 4:** `npm test` → PASS. **Commit:** `feat: модель на задачу с повышением при неудаче`
 
 ### Task 3: Журнал запусков и `stats` · model: sonnet
 

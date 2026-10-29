@@ -37,6 +37,19 @@ test('captures output and exit code', async () => {
   assert.equal(existsSync(join(stateDir, 'child.pid')), false);
 });
 
+test('model adds --model to claude arguments', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  const r = await runIteration({ task, cfg, stateDir, logDir, claudeBin: fake, timeoutMs: 10_000, env: { FAKE_MODE: 'args' }, model: 'haiku' });
+  assert.match(r.output, /--model haiku/);
+});
+
+test('no model → no --model', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  const r = await runIteration({ task, cfg, stateDir, logDir, claudeBin: fake, timeoutMs: 10_000, env: { FAKE_MODE: 'args' } });
+  assert.match(r.output, /args: /);
+  assert.doesNotMatch(r.output, /--model/);
+});
+
 test('timeout kills process', async () => {
   const { cfg, stateDir, logDir } = setup();
   const r = await runIteration({ task, cfg, stateDir, logDir, claudeBin: fake, timeoutMs: 500, env: { FAKE_MODE: 'hang' } });

@@ -30,6 +30,9 @@ if (mode === 'ok') {
     writeFileSync(planFile, lines.join('\n'));
   }
   result(false, 'ticked');
+} else if (mode === 'args') {
+  // Prints its command line (without the prompt) so tests can check the flags.
+  console.log(`args: ${process.argv.slice(2).filter((a, i, all) => all[i - 1] !== '-p').join(' ')}`);
 } else if (mode === 'killparent') {
   process.kill(process.ppid, 'SIGKILL');
 } else if (mode === 'hang') {

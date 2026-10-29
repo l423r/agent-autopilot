@@ -76,6 +76,11 @@ test('crash-time bump: state saved as running already holds the attempt', () => 
   assert.equal(running.attempts['Task 2'], 1);
 });
 
+test('markRunning saves the model of the run', () => {
+  assert.equal(markRunning(initialState(), task2, now, 'sonnet').currentModel, 'sonnet');
+  assert.equal(markRunning(initialState(), task2, now).currentModel, null);
+});
+
 test('done task resets attempts', () => {
   const s = applyResult({ ...initialState(), attempts: { 'Task 2': 2 } }, task2, { kind: 'ok' }, planTask2Done, now, cfg);
   assert.deepEqual(s.attempts, {});

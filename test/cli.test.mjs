@@ -1,6 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -543,4 +543,31 @@ test('switch: из остановленного состояния демон с
   } finally {
     await d.stop();
   }
+});
+
+test('model: restart after a counted attempt runs the next step up and logs it', async () => {
+  const { root } = setup();
+  writeFileSync(join(root, 'plan.md'), PLAN.replace('### Task 2: two', '### Task 2: two · model: haiku'));
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'state', 'state.json'), JSON.stringify({ status: 'running', currentTask: 'Task 2', attempts: { 'Task 2': 1 }, nextAttemptAt: null, reason: null, updatedAt: null }));
+  await exec(root, ['once'], 'args');
+  const log = readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8');
+  assert.match(log, /run Task 2 \(sonnet, попытка 2\): two\n/);
+  const s = state(root);
+  assert.equal(s.attempts['Task 2'], 2);
+  const iter = readdirSync(join(root, 'logs')).find(f => f.startsWith('iter-'));
+  assert.match(readFileSync(join(root, 'logs', iter), 'utf8'), /--model sonnet/);
+});
+
+test('model: unmarked task without defaultModel logs as before', async () => {
+  const { root } = setup();
+  await exec(root, ['once'], 'args');
+  assert.match(readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8'), /run Task 2: two\n/);
+});
+
+test('model: invalid defaultModel stops the autopilot from starting', async () => {
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, defaultModel: 'gpt' }));
+  await assert.rejects(exec(root, ['once'], 'tick'), err => /defaultModel: допустимо haiku, sonnet, opus/.test(err.stderr));
+  assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /- \[ \]/);
 });

@@ -13,6 +13,7 @@ import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
+import { modelFor, validateModelConfig } from './lib/models.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -39,6 +40,7 @@ function loadConfig() {
   cfg.autopilotDir ??= HERE;
   cfg.stateDir ??= join(cfg.autopilotDir, 'state');
   cfg.logDir ??= join(cfg.autopilotDir, 'logs');
+  validateModelConfig(cfg);
   return effectiveConfig(cfg);
 }
 
@@ -91,8 +93,11 @@ async function step(cfg) {
   }
   if (d.action === 'sleep') return { sleepUntil: d.until };
 
-  logEvent(cfg, `run ${d.task.id}: ${d.task.title}`);
-  saveState(cfg.stateDir, markRunning(state, d.task, now));
+  // Computed before markRunning counts this run; a run lost to a restart was already counted.
+  const attempt = (state.attempts[d.task.id] ?? 0) + 1;
+  const model = modelFor(d.task, attempt, cfg);
+  logEvent(cfg, `run ${d.task.id}${model ? ` (${model}, попытка ${attempt})` : ''}: ${d.task.title}`);
+  saveState(cfg.stateDir, markRunning(state, d.task, now, model));
   commands.busy = true;
   const template = readFileSync(join(HERE, 'prompt.md'), 'utf8');
   const raw = await runIteration({
@@ -100,6 +105,7 @@ async function step(cfg) {
     claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
     timeoutMs: cfg.iterationTimeoutMinutes * 60_000,
     prompt: buildPrompt(template, d.task, cfg),
+    model,
   });
   const finishedAt = new Date();
   const result = classify(raw, finishedAt, cfg);
@@ -120,7 +126,7 @@ async function step(cfg) {
   const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
   if (cfg.pushAfterTask && finished) pushProject(cfg, d.task);
   if (finished && cfg.notifyEachTask) {
-    await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, d.task.title), tags: 'heavy_check_mark', priority: 2, actions: buttonsFor('task') });
+    await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, `${d.task.title}${model ? ` · ${model}` : ''}`), tags: 'heavy_check_mark', priority: 2, actions: buttonsFor('task') });
   }
   if (next.status === 'sleeping' && result.kind === 'limit') {
     const at = new Date(next.nextAttemptAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
