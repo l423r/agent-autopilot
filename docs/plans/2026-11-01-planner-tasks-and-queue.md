@@ -174,11 +174,11 @@
 
 ### Task 9: [manual] Включение
 
-- [ ] **Step 1:** Планировщик (автопилот не перезапускает сам себя):
+- [x] **Step 1:** Планировщик (автопилот не перезапускает сам себя):
   - дождаться паузы между задачами, `systemctl restart agent-autopilot agent-autopilot-web`, `status`;
   - собрать очередь:
     1. svoydev `docs/superpowers/plans/2026-11-01-zhk-polish.md`;
     2. svoydev `docs/superpowers/plans/2026-10-31-drafts-generator.md`;
     3. svoydev `docs/superpowers/plans/2026-10-28-domain-seo-content.md` (стоит на покупке домена — `user`);
   - в этих планах ручные задачи выкладки переименовать в `[planner]`.
-- [ ] **Step 2:** Обновить память планировщика (правила `[planner]` и очередь), проверить в пульте блоки «Очередь» и «Ждёт вас».
+- [x] **Step 2:** Обновить память планировщика (правила `[planner]` и очередь), проверить в пульте блоки «Очередь» и «Ждёт вас».
