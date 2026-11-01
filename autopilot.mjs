@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Autopilot CLI: run | once | status | resume | stats
+// Autopilot CLI: run | once | status | resume | stats | queue
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, validateModelConfig } from './lib/models.mjs';
 import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
-import { loadQueue, saveQueue, enqueue, pickNext, shouldPreempt } from './lib/queue.mjs';
+import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt } from './lib/queue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -437,7 +437,63 @@ function status(cfg) {
     `Следующая попытка: ${s.nextAttemptAt ?? '—'}`,
     `Причина: ${s.reason ?? '—'}`,
     apk ? `Последний ${apk}` : 'APK: ещё не собирался',
+    ...queueBlocks(cfg),
   ].join('\n'));
+}
+
+// --- `queue list|add|remove|up` and the queue blocks of `status` ---
+
+// One row per queue entry: { target, done, total, waiting: task|null, error? }.
+function queueRows(cfg, items) {
+  return items.map(target => {
+    try {
+      const plan = readTarget(target);
+      const next = allDone(plan) ? null : nextTask(plan);
+      return { target, done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length, waiting: next?.kind === 'user' ? next : null };
+    } catch (err) {
+      return { target, error: err.code === 'ENOENT' ? 'нет файла плана' : err.message };
+    }
+  });
+}
+
+const rowLine = (cfg, row, n) => `${n + 1}. ${planLabel(cfg, row.target)} — ${row.error ? `ошибка: ${row.error}` : `${row.done}/${row.total}${row.waiting ? `, ждёт вас: ${row.waiting.id}` : ''}`}`;
+
+function queueBlocks(cfg) {
+  const q = loadQueue(cfg.stateDir);
+  if (q.error) return [`Очередь: не читается (${q.error})`];
+  if (!q.items.length) return [];
+  const rows = queueRows(cfg, q.items);
+  const waiting = rows.filter(r => r.waiting);
+  return [
+    'Очередь:', ...rows.map((r, n) => rowLine(cfg, r, n)),
+    ...(waiting.length ? ['Ждёт вас:', ...waiting.map(r => `${planLabel(cfg, r.target)} — ${r.waiting.id}: ${r.waiting.title}`)] : []),
+  ];
+}
+
+function queueCommand(cfg, args) {
+  const [sub, ...rest] = args;
+  const fail = msg => { console.error(msg); process.exitCode = 2; };
+  const q = loadQueue(cfg.stateDir);
+  if (q.error) return fail(`Очередь не читается: ${q.error}`);
+  if (sub === 'list') {
+    console.log(q.items.length ? queueRows(cfg, q.items).map((r, n) => rowLine(cfg, r, n)).join('\n') : 'Очередь пуста');
+  } else if (sub === 'add') {
+    if (rest.length < 2) return fail('Использование: autopilot.mjs queue add <projectDir> <planPath>');
+    const projectDir = resolve(rest[0]);
+    const planPath = rest[1];
+    if (!existsSync(resolve(projectDir, planPath))) return fail(`нет плана: ${resolve(projectDir, planPath)}`);
+    const progressPath = progressPathFor(projectByDir(cfg, projectDir) ?? {}, planPath);
+    saveQueue(cfg.stateDir, enqueue(q.items, { projectDir, planPath, progressPath }));
+    console.log(`Добавлено: ${planLabel(cfg, { projectDir, planPath })}`);
+  } else if (sub === 'remove' || sub === 'up') {
+    const n = Number(rest[0]);
+    if (!Number.isInteger(n)) return fail(`Нужен номер записи: autopilot.mjs queue ${sub} <n>`);
+    if (n < 1 || n > q.items.length) return fail(`нет записи ${n} (в очереди ${q.items.length})`);
+    saveQueue(cfg.stateDir, sub === 'remove' ? removeAt(q.items, n - 1) : moveUp(q.items, n - 1));
+    console.log(sub === 'remove' ? `Убрано: ${n}` : `Поднято: ${n}`);
+  } else {
+    fail('Использование: autopilot.mjs queue list | add <projectDir> <planPath> | remove <n> | up <n>');
+  }
 }
 
 function stats(cfg, args) {
@@ -466,7 +522,8 @@ else if (cmd === 'once') await runLoop(cfg, true);
 else if (cmd === 'status') status(cfg);
 else if (cmd === 'resume') doResume(cfg);
 else if (cmd === 'stats') stats(cfg, process.argv.slice(3));
+else if (cmd === 'queue') queueCommand(cfg, process.argv.slice(3));
 else {
-  console.log('Использование: autopilot.mjs run | once | status | resume | stats [--plan <файл плана>]');
+  console.log('Использование: autopilot.mjs run | once | status | resume | stats [--plan <файл плана>] | queue list|add|remove|up');
   process.exitCode = 2;
 }

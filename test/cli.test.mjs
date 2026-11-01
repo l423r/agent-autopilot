@@ -780,3 +780,84 @@ test('queue: пропавший план пропускается с уведо�
   assert.equal(state(b.root).status, 'done');
   assert.match(readFileSync(join(b.root, 'logs', 'autopilot.log'), 'utf8'), /queue\.json/);
 });
+
+// --- queue commands ---
+const CLI_WAITING_PLAN = `### Task 1: one
+- [x] s
+### Task 2: [manual] Купить домен
+- [ ] s
+### Task 3: three
+- [ ] s
+`;
+
+function cliQueueSetup() {
+  const { root } = setup();
+  writeFileSync(join(root, 'waiting.md'), CLI_WAITING_PLAN);
+  return root;
+}
+const cliQueueFile = root => join(root, 'state', 'queue.json');
+const cliReadQueue = root => JSON.parse(readFileSync(cliQueueFile(root), 'utf8'));
+
+test('queue add with a missing plan fails and writes nothing', async () => {
+  const root = cliQueueSetup();
+  await assert.rejects(exec(root, ['queue', 'add', root, 'nope.md']), err => {
+    assert.notEqual(err.code, 0);
+    assert.match(err.stderr + err.stdout, /нет плана/);
+    return true;
+  });
+  assert.equal(existsSync(cliQueueFile(root)), false);
+});
+
+test('queue add appends plans and keeps duplicates out', async () => {
+  const root = cliQueueSetup();
+  await exec(root, ['queue', 'add', root, 'plan.md']);
+  await exec(root, ['queue', 'add', root, 'waiting.md']);
+  await exec(root, ['queue', 'add', root, 'plan.md']);
+  const items = cliReadQueue(root);
+  assert.deepEqual(items.map(i => i.planPath), ['plan.md', 'waiting.md']);
+  assert.equal(items[1].progressPath, 'waiting.progress.md');
+});
+
+test('queue list shows numbers, plan, progress and the task it waits for', async () => {
+  const root = cliQueueSetup();
+  await exec(root, ['queue', 'add', root, 'plan.md']);
+  await exec(root, ['queue', 'add', root, 'waiting.md']);
+  const { stdout } = await exec(root, ['queue', 'list']);
+  const lines = stdout.trim().split('\n');
+  assert.match(lines[0], /^1\. .*plan\.md.*1\/3/);
+  assert.doesNotMatch(lines[0], /ждёт вас/);
+  assert.match(lines[1], /^2\. .*waiting\.md.*1\/3.*ждёт вас: Task 2/);
+});
+
+test('queue list on an empty queue says so', async () => {
+  const root = cliQueueSetup();
+  const { stdout } = await exec(root, ['queue', 'list']);
+  assert.match(stdout, /пуста/);
+});
+
+test('queue up and remove work by number', async () => {
+  const root = cliQueueSetup();
+  await exec(root, ['queue', 'add', root, 'plan.md']);
+  await exec(root, ['queue', 'add', root, 'waiting.md']);
+  await exec(root, ['queue', 'up', '2']);
+  assert.deepEqual(cliReadQueue(root).map(i => i.planPath), ['waiting.md', 'plan.md']);
+  await exec(root, ['queue', 'remove', '1']);
+  assert.deepEqual(cliReadQueue(root).map(i => i.planPath), ['plan.md']);
+  await assert.rejects(exec(root, ['queue', 'remove', '5']), err => /нет записи 5/.test(err.stderr + err.stdout));
+  await assert.rejects(exec(root, ['queue', 'up', 'x']), err => /номер/.test(err.stderr + err.stdout));
+});
+
+test('status shows the queue and what waits for you', async () => {
+  const root = cliQueueSetup();
+  await exec(root, ['queue', 'add', root, 'plan.md']);
+  await exec(root, ['queue', 'add', root, 'waiting.md']);
+  const { stdout } = await exec(root, ['status']);
+  assert.match(stdout, /Очередь:\n1\. .*plan\.md.*\n2\. .*waiting\.md/);
+  assert.match(stdout, /Ждёт вас:\n.*waiting\.md — Task 2: Купить домен/);
+});
+
+test('status without a queue has no queue blocks', async () => {
+  const { root } = setup();
+  const { stdout } = await exec(root, ['status']);
+  assert.doesNotMatch(stdout, /Очередь|Ждёт вас/);
+});

@@ -133,14 +133,14 @@
 
 **Files:** Modify `autopilot.mjs` (`queue list|add|remove|up`, `status` показывает очередь и «Ждёт вас»), `README.md`; Test `test/cli.test.mjs`
 
-- [ ] **Step 1:** Тесты:
+- [x] **Step 1:** Тесты:
   - `queue add` с несуществующим планом → ошибка;
   - `list` — номера, проект, план, прогресс, отметка «ждёт вас: Task N»;
   - `up` и `remove` по номеру;
   - `status` — блоки «Очередь» и «Ждёт вас».
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(cli): queue commands`
+- [x] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(cli): queue commands`
 
 ### Task 6: Пульт — «Очередь» и «Ждёт вас» · model: sonnet
 

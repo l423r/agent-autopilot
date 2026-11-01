@@ -55,6 +55,11 @@ echo 'EXPO_TOKEN=...' >> /root/.config/agent-autopilot.env   # если прое
 | `node autopilot.mjs once` | один шаг вручную |
 | `node autopilot.mjs run` | цикл (так запускает systemd) |
 | `node autopilot.mjs stats [--plan <файл плана>]` | сводка `logs/runs.jsonl` по моделям: запусков, задача закрыта, среднее время, стоимость, выходные токены; `--plan` — только запуски этого плана (по имени файла); повреждённые строки пропускаются («пропущено строк: N») |
+| `node autopilot.mjs queue list` | очередь планов (`state/queue.json`): номер, проект, план, прогресс, отметка «ждёт вас: Task N» |
+| `node autopilot.mjs queue add <projectDir> <planPath>` | добавить план в конец очереди; нет файла плана — ошибка; повтор не дублирует |
+| `node autopilot.mjs queue up <n>` / `queue remove <n>` | поднять запись на одну позицию / убрать из очереди (номера из `queue list`) |
+
+`status` при непустой очереди добавляет блоки «Очередь» и «Ждёт вас» (все `[manual]`-задачи планов очереди).
 
 ## Управление с телефона
 
