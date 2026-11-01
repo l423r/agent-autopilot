@@ -102,14 +102,14 @@
 - `pickNext(items, { readPlan })` → `{ target, waiting: [{ target, task }], doneTargets: [] }` по Global Constraints;
 - `shouldPreempt(items, current, { readPlan })` → `target|null` — план выше текущего, который снова можно продолжать.
 
-- [ ] **Step 1:** Тесты:
+- [x] **Step 1:** Тесты:
   - все варианты выбора;
   - Review Focus 1, 4 (битый файл), 5 (нет файла плана);
   - `shouldPreempt` только для планов **выше** текущего;
   - атомарная запись.
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать (`readPlan` подменяется в тестах). `npm test` → PASS. **Commit** — `feat: plan queue`
+- [x] **Step 2:** Реализовать (`readPlan` подменяется в тестах). `npm test` → PASS. **Commit** — `feat: plan queue`
 
 ### Task 4: Очередь в демоне · model: opus
 
