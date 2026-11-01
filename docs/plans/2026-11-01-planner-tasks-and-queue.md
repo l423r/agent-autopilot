@@ -68,7 +68,7 @@
 
 **Interfaces:** Produces: у задачи `kind: 'auto'|'planner'|'user'` (`manual` остаётся — `true` для `user`, для совместимости); `title` без пометок; `warnings[]` у плана (например, `[planner]` с `restart agent-autopilot` → `kind: 'user'`).
 
-- [ ] **Step 1:** Тесты:
+- [x] **Step 1:** Тесты:
   - `### Task 9: [planner] Выкладка · model: opus` → `kind: 'planner'`, `model: 'opus'`;
   - `[manual]` → `user`;
   - без пометки → `auto`;
@@ -76,7 +76,7 @@
   - `[planner]` со строкой `systemctl restart agent-autopilot` в шагах → `user` и предупреждение.
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(plan): [planner] task kind`
+- [x] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(plan): [planner] task kind`
 
 ### Task 2: Запуск `[planner]`-задач · model: opus
 

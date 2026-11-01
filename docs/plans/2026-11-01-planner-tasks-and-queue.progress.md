@@ -1,0 +1,1 @@
+- 2026-11-01 11:14 Task 1: сделано — пометка [planner], task.kind (auto|planner|user), warnings у плана; npm test 254/254

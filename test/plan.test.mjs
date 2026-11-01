@@ -66,3 +66,44 @@ test('model mark before [manual] is also parsed', () => {
   assert.equal(t.model, 'haiku');
   assert.equal(t.title, 'Выкладка');
 });
+
+test('task kind: planner, user, auto', () => {
+  const t = md => parsePlan(md).tasks[0];
+  const p = t('### Task 9: [planner] Выкладка · model: opus');
+  assert.equal(p.kind, 'planner');
+  assert.equal(p.model, 'opus');
+  assert.equal(p.manual, false);
+  assert.equal(p.title, 'Выкладка');
+  const u = t('### Task 9: [manual] Покупка');
+  assert.equal(u.kind, 'user');
+  assert.equal(u.manual, true);
+  assert.equal(t('### Task 9: Код').kind, 'auto');
+});
+
+test('kind marks in any order', () => {
+  const a = parsePlan('### Task 1: Выкладка · model: haiku [planner]').tasks[0];
+  assert.equal(a.kind, 'planner');
+  assert.equal(a.model, 'haiku');
+  assert.equal(a.title, 'Выкладка');
+  const b = parsePlan('### Task 1: Выкладка [planner] · model: sonnet').tasks[0];
+  assert.equal(b.kind, 'planner');
+  assert.equal(b.model, 'sonnet');
+  assert.equal(b.title, 'Выкладка');
+});
+
+test('[planner] with restart of autopilot becomes user with a warning', () => {
+  const p = parsePlan([
+    '### Task 9: [planner] Включение',
+    '',
+    '- [ ] **Step 1:** `systemctl restart agent-autopilot agent-autopilot-web`',
+    '',
+    '### Task 10: [planner] Проверка',
+    '',
+    '- [ ] **Step 1:** `systemctl restart agent-autopilot-web`',
+  ].join('\n'));
+  assert.equal(p.tasks[0].kind, 'user');
+  assert.equal(p.tasks[0].manual, true);
+  assert.equal(p.tasks[1].kind, 'planner');
+  assert.equal(p.warnings.length, 1);
+  assert.match(p.warnings[0], /Task 9/);
+});
