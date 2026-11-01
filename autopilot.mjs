@@ -4,18 +4,19 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsS
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { parsePlan, nextTask } from './lib/plan.mjs';
+import { parsePlan, nextTask, allDone } from './lib/plan.mjs';
 import { classify, usageOf } from './lib/classify.mjs';
 import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
-import { notify, stopMessage, buttonsFor } from './lib/notify.mjs';
+import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, validateModelConfig } from './lib/models.mjs';
 import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
-import { effectiveConfig, takeSwitch, applySwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
+import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
+import { loadQueue, saveQueue, enqueue, pickNext, shouldPreempt } from './lib/queue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -239,7 +240,7 @@ async function applyPendingSwitch(cfg) {
   const t = takeSwitch(cfg.stateDir);
   if (!t) return;
   const project = projectByDir(cfg, t.projectDir);
-  const label = `${project?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
+  const label = planLabel(cfg, t);
   // switch.json may be written by hand: a missing plan must not become a crash loop via active.json.
   if (!existsSync(resolve(t.projectDir, t.planPath))) {
     logEvent(cfg, `Переключение отклонено: нет плана ${resolve(t.projectDir, t.planPath)}`);
@@ -250,7 +251,8 @@ async function applyPendingSwitch(cfg) {
   const was = basename(cfg.planPath);
   // A pause sent after the switch request wins: the plan changes, the autopilot stays paused.
   const keepPaused = loadState(cfg.stateDir).status === 'paused' && commands.lastPauseAt > requestedAt;
-  applySwitch(cfg.stateDir, target);
+  queueSwitch(cfg.stateDir, target);
+  applySwitch(cfg.stateDir, target, currentTarget(cfg));
   if (keepPaused) saveState(cfg.stateDir, { ...loadState(cfg.stateDir), status: 'paused', reason: 'Пауза по команде с телефона' });
   Object.assign(cfg, target);
   setPauseAfterTask(cfg, false);
@@ -258,21 +260,122 @@ async function applyPendingSwitch(cfg) {
   await send(cfg, { title: 'Автопилот: другой план', message: withProgress(cfg, `Переключено: ${label}${keepPaused ? '\nНа паузе — нажми «Продолжить»' : ''}`), tags: 'twisted_rightwards_arrows', priority: 3 });
 }
 
+// --- Plan queue (<stateDir>/queue.json). Without the file everything works as before. ---
+
+const currentTarget = cfg => ({ projectDir: cfg.projectDir, planPath: cfg.planPath, progressPath: cfg.progressPath });
+const sameTarget = (a, b) => a.projectDir === b.projectDir && a.planPath === b.planPath;
+const readTarget = t => parsePlan(readFileSync(resolve(t.projectDir, t.planPath), 'utf8'));
+const planLabel = (cfg, t) => `${projectByDir(cfg, t.projectDir)?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
+const queueFile = cfg => join(cfg.stateDir, 'queue.json');
+const recheckMs = cfg => (cfg.queueRecheckSeconds ?? 60) * 1000;
+let lastQueueError = null;
+
+// Between tasks: the queue may move the daemon to another plan. Only from idle (preemption by
+// a plan above the current one), done and waiting-user; paused, sleeping, halted, auth stay put.
+async function switchTo(cfg, target, why) {
+  const t = { projectDir: target.projectDir, planPath: target.planPath, progressPath: target.progressPath ?? progressPathFor(projectByDir(cfg, target.projectDir) ?? {}, target.planPath) };
+  const was = basename(cfg.planPath);
+  applySwitch(cfg.stateDir, t, currentTarget(cfg));
+  Object.assign(cfg, t);
+  logEvent(cfg, `Переключено: ${planLabel(cfg, t)} (было: ${was})${why ? ` — ${why}` : ''}`);
+  await send(cfg, switchedMessage(planLabel(cfg, t), why));
+}
+
+async function followQueue(cfg) {
+  if (!existsSync(queueFile(cfg))) return;
+  const q = loadQueue(cfg.stateDir);
+  if (q.error) {
+    if (q.error !== lastQueueError) logEvent(cfg, `очередь не читается, работаю без неё: ${q.error}`);
+    lastQueueError = q.error;
+    return;
+  }
+  lastQueueError = null;
+  const state = loadState(cfg.stateDir);
+  if (!['idle', 'done', 'waiting-user'].includes(state.status)) return;
+
+  const current = currentTarget(cfg);
+  let currentPlan = null;
+  try { currentPlan = readPlan(cfg); } catch { /* reported by step() */ }
+  let items = q.items;
+  // The active plan always has its place in the queue (first, as a switch would put it).
+  if (currentPlan && !allDone(currentPlan) && !items.some(x => sameTarget(x, current))) items = enqueue(items, current, { front: true });
+  if (!items.length) return;
+
+  const pick = pickNext(items, { readPlan: readTarget });
+  const gone = new Set();
+  for (const t of pick.doneTargets) {
+    gone.add(t);
+    logEvent(cfg, `План выполнен: ${planLabel(cfg, t)}`);
+    await send(cfg, planDoneMessage(planLabel(cfg, t)));
+  }
+  for (const { target: t, error } of pick.missing) {
+    gone.add(t);
+    logEvent(cfg, `План убран из очереди: ${planLabel(cfg, t)} — ${error}`);
+    await send(cfg, planMissingMessage(planLabel(cfg, t), error));
+  }
+  const waiting = new Map(pick.waiting.map(w => [w.target, w.task]));
+  const fresh = [];
+  const since = new Date().toISOString();
+  items = items.filter(x => !gone.has(x)).map(x => {
+    const task = waiting.get(x);
+    if (!task) {
+      const { waitingUser: _, ...rest } = x;
+      return rest;
+    }
+    if (x.waitingUser?.task === task.id) return x;
+    fresh.push({ target: x, task });
+    return { ...x, waitingUser: { task: task.id, since } };
+  });
+  if (JSON.stringify(items) !== JSON.stringify(q.items)) saveQueue(cfg.stateDir, items);
+  for (const { target: t, task } of fresh) {
+    logEvent(cfg, `Ждёт вас: ${planLabel(cfg, t)} — ${task.id}: ${task.title}`);
+    await send(cfg, waitingMessage(planLabel(cfg, t), task));
+  }
+
+  const currentRunnable = Boolean(currentPlan) && !allDone(currentPlan) && nextTask(currentPlan).kind !== 'user';
+  if (state.status === 'idle' && currentRunnable) {
+    const up = shouldPreempt(items, current, { readPlan: readTarget });
+    if (up) await switchTo(cfg, up, 'выше в очереди');
+    return;
+  }
+  if (pick.target) {
+    if (!sameTarget(pick.target, current)) {
+      await switchTo(cfg, pick.target, currentPlan && !allDone(currentPlan) && !currentRunnable ? 'тот ждёт вас' : null);
+    } else if (state.status !== 'idle') {
+      saveState(cfg.stateDir, { ...state, status: 'idle', reason: null, updatedAt: new Date().toISOString() });
+      logEvent(cfg, `Продолжаю: ${planLabel(cfg, current)} (было: ${state.status})`);
+    }
+    return;
+  }
+  const status = pick.waiting.length ? 'waiting-user' : 'done';
+  const reason = pick.waiting.length
+    ? `Ждёт вас: ${pick.waiting.map(w => `${planLabel(cfg, w.target)} — ${w.task.id}: ${w.task.title}`).join('; ')}`
+    : 'Все планы очереди выполнены';
+  if (state.status === status && state.reason === reason) return;
+  saveState(cfg.stateDir, { ...state, status, reason, updatedAt: new Date().toISOString() });
+  // «Ждёт вас» went out per task above; «готово» once for the whole queue.
+  if (status === 'done' && state.status !== 'done') await send(cfg, { ...stopMessage('done', reason), actions: buttonsFor('done') });
+}
+
 // Sleeps until `until` (ms timestamp, Infinity = no deadline); with commands on, in steps
 // of at most a second, returning early as soon as a command is queued or the status in
 // state.json changes (e.g. `autopilot.mjs resume` from the shell) or a plan switch is requested.
+// With queue.json it also returns after queueRecheckSeconds (60 s) to look at waiting plans again.
 async function waitUntil(cfg, until) {
   const statusNow = () => { try { return loadState(cfg.stateDir).status; } catch { return null; } };
   const from = statusNow();
+  const queued = existsSync(queueFile(cfg));
+  const deadline = queued ? Math.min(until, Date.now() + recheckMs(cfg)) : until;
+  const ticking = commands.enabled || queued;
   for (;;) {
     if (commands.queue.length) return;
     if (existsSync(join(cfg.stateDir, 'switch.json'))) return;
-    if (commands.enabled && statusNow() !== from) return;
-    const left = until - Date.now();
+    if (ticking && statusNow() !== from) return;
+    const left = deadline - Date.now();
     if (left <= 0) return;
-    const chunk = commands.enabled ? COMMAND_TICK_MS : MAX_SLEEP_CHUNK_MS;
+    const chunk = ticking ? COMMAND_TICK_MS : MAX_SLEEP_CHUNK_MS;
     await new Promise(res => setTimeout(res, Math.min(left, chunk)));
-    if (!commands.enabled) return;
+    if (!ticking) return;
   }
 }
 
@@ -295,9 +398,12 @@ async function runLoop(cfg, once) {
   for (;;) {
     await applyPendingSwitch(cfg);
     await drainCommands(cfg);
+    await followQueue(cfg);
     const r = await step(cfg);
     if (r === 'stop') {
-      if (!commands.enabled) return;
+      // A queue with plans waiting for the user keeps the daemon up to see their ticks.
+      const waitsForUser = existsSync(queueFile(cfg)) && loadState(cfg.stateDir).status === 'waiting-user';
+      if (once || (!commands.enabled && !waitsForUser)) return;
       await waitUntil(cfg, Infinity);
       continue;
     }

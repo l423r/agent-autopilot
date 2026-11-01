@@ -277,7 +277,7 @@ const waitFor = async (cond, ms = 15_000) => {
 };
 
 // A daemon with ntfyCommands on, running as a separate process; stop() sends SIGTERM.
-async function daemon(mode, { preState, since, fakePlan, config } = {}) {
+async function daemon(mode, { preState, since, fakePlan, config, prepare } = {}) {
   const { spawn } = await import('node:child_process');
   const n = await fakeNtfyCmd();
   const { root, cfg } = setup();
@@ -285,6 +285,7 @@ async function daemon(mode, { preState, since, fakePlan, config } = {}) {
   mkdirSync(join(root, 'state'), { recursive: true });
   if (preState) writeFileSync(join(root, 'state', 'state.json'), JSON.stringify(preState));
   if (since) writeFileSync(join(root, 'state', 'commands.since'), since + '\n');
+  prepare?.(root);
   const d = {
     root, n,
     replies: () => n.got.filter(g => g.path === '/tp'),
@@ -659,4 +660,123 @@ test('planner: «НУЖЕН ЧЕЛОВЕК» without ticks → failed attempts, 
   assert.match(s.reason, /Task 2 не удалась 3 раз подряд: НУЖЕН ЧЕЛОВЕК: нет доступа к серверу/);
   assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /### Task 2: \[planner\] Выкладка\n- \[ \]/);
   assert.equal((readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8').match(/run Task 2 \(opus/g) ?? []).length, 3);
+});
+
+// --- Plan queue in the daemon (<stateDir>/queue.json) ---
+
+const QA = `## Этап 1. A
+### Task 1: a-one
+- [ ] s
+### Task 2: [manual] a-hand
+- [ ] s
+### Task 3: a-three
+- [ ] s
+`;
+const QB = `## Этап 1. B
+### Task 1: b-one
+- [ ] s
+### Task 2: b-two
+- [ ] s
+`;
+const QC = `## Этап 1. C
+### Task 1: c-one
+- [x] s
+`;
+const QWAIT = `## Этап 1. W
+### Task 1: [manual] w-hand
+- [ ] s
+`;
+const qItem = (root, planPath) => ({ projectDir: root, planPath, progressPath: planPath.replace(/\.md$/, '.progress.md'), addedAt: '2026-11-01T00:00:00.000Z' });
+const queueOf = root => JSON.parse(readFileSync(join(root, 'state', 'queue.json'), 'utf8'));
+// Plans by file name, the queue in that order, plan.md active.
+const queueSetup = (plans, queue) => root => {
+  for (const [name, text] of Object.entries(plans)) writeFileSync(join(root, name), text);
+  writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify(queue.map(p => qItem(root, p))));
+  writeFileSync(join(root, 'state', 'active.json'), JSON.stringify({ projectDir: root, planPath: 'plan.md', progressPath: 'progress.md' }));
+};
+
+test('queue: A до [manual] → B, C убран, галочка в A → A после текущей задачи B → done', async () => {
+  const d = await daemon('slow', {
+    fakePlan: '', config: { queueRecheckSeconds: 0.3 },
+    prepare: queueSetup({ 'plan.md': QA, 'b.md': QB, 'c.md': QC }, ['plan.md', 'b.md', 'c.md']),
+  });
+  const text = name => readFileSync(join(d.root, name), 'utf8');
+  try {
+    await waitFor(() => active(d.root).planPath === 'b.md' && state(d.root).status === 'running', 15_000);
+    assert.match(text('plan.md'), /### Task 1: a-one\n- \[x\]/);
+    assert.ok(!queueOf(d.root).some(x => x.planPath === 'c.md'), 'завершённый C убран из очереди');
+    assert.equal(queueOf(d.root)[0].waitingUser.task, 'Task 2');
+    // The user ticks their task in A while B's task runs.
+    writeFileSync(join(d.root, 'plan.md'), text('plan.md').replace('### Task 2: [manual] a-hand\n- [ ]', '### Task 2: [manual] a-hand\n- [x]'));
+    await waitFor(() => /### Task 3: a-three\n- \[x\]/.test(text('plan.md')), 20_000);
+    assert.match(text('b.md'), /### Task 1: b-one\n- \[x\]/);
+    assert.match(text('b.md'), /### Task 2: b-two\n- \[ \]/);
+    await waitFor(() => state(d.root).status === 'done', 20_000);
+    assert.doesNotMatch(text('b.md'), /- \[ \]/);
+    assert.deepEqual(queueOf(d.root), []);
+    const got = d.replies().map(r => `${r.params.title} | ${r.body}`);
+    assert.equal(got.filter(t => /Ждёт вас/.test(t) && /plan\.md — Task 2: a-hand/.test(t)).length, 1, got.join('\n'));
+    assert.equal(got.filter(t => /План выполнен: .*c\.md/.test(t)).length, 1, got.join('\n'));
+    assert.ok(got.some(t => /Переключено на .*b\.md \(тот ждёт вас\)/.test(t)), got.join('\n'));
+    assert.match(readFileSync(join(d.root, 'logs', 'autopilot.log'), 'utf8'), /План выполнен/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('queue: два плана ждут, третий завершён → waiting-user с обоими, без переключений, «Ждёт вас» по разу', async () => {
+  const d = await daemon('tick', {
+    fakePlan: '', config: { queueRecheckSeconds: 0.2 },
+    prepare: queueSetup({ 'plan.md': QWAIT, 'w2.md': QWAIT, 'c.md': QC }, ['plan.md', 'w2.md', 'c.md']),
+  });
+  try {
+    await waitFor(() => state(d.root).status === 'waiting-user', 10_000);
+    await new Promise(r => setTimeout(r, 1500));
+    const s = state(d.root);
+    assert.equal(s.status, 'waiting-user');
+    assert.match(s.reason, /plan\.md/);
+    assert.match(s.reason, /w2\.md/);
+    assert.doesNotMatch(readFileSync(join(d.root, 'logs', 'autopilot.log'), 'utf8'), /Переключено/);
+    const got = d.replies().map(r => `${r.params.title} | ${r.body}`);
+    assert.equal(got.filter(t => /Ждёт вас/.test(t)).length, 2, got.join('\n'));
+    assert.deepEqual(queueOf(d.root).map(x => x.planPath), ['plan.md', 'w2.md']);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('queue: switch.json во время работы ставит план первым в очередь', async () => {
+  const d = await daemon('slow', {
+    fakePlan: '',
+    prepare: queueSetup({ 'b.md': QB }, ['plan.md', 'b.md']),
+  });
+  try {
+    await waitFor(() => d.n.subs.length > 0 && state(d.root).status === 'running');
+    requestSwitch(join(d.root, 'state'), { projectDir: d.root, planPath: 'b.md', progressPath: 'b.progress.md' });
+    await waitFor(() => active(d.root).planPath === 'b.md', 15_000);
+    assert.deepEqual(queueOf(d.root).map(x => x.planPath), ['b.md', 'plan.md']);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('queue: пропавший план пропускается с уведомлением, битый queue.json — работа без очереди', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: n.url, ntfyTopic: 'tp' }));
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify([qItem(root, 'gone.md'), qItem(root, 'plan.md')]));
+  await exec(root, ['run'], 'tick');
+  assert.equal(state(root).status, 'done');
+  assert.ok(!queueOf(root).some(x => x.planPath === 'gone.md'));
+  assert.ok(n.got.some(g => /gone\.md/.test(g.body)), n.got.map(g => g.body).join(' | '));
+
+  const b = setup();
+  mkdirSync(join(b.root, 'state'), { recursive: true });
+  writeFileSync(join(b.root, 'state', 'queue.json'), '{ broken');
+  await exec(b.root, ['run'], 'tick');
+  n.close();
+  assert.equal(state(b.root).status, 'done');
+  assert.match(readFileSync(join(b.root, 'logs', 'autopilot.log'), 'utf8'), /queue\.json/);
 });

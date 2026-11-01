@@ -1,3 +1,4 @@
 - 2026-11-01 11:14 Task 1: сделано — пометка [planner], task.kind (auto|planner|user), warnings у плана; npm test 254/254
 - 2026-11-01 11:20 Task 2: сделано — [planner]-задачи запускаются с промптом planner-prompt.md + planner-task-prompt.md, модель по умолчанию opus, «НУЖЕН ЧЕЛОВЕК» из журнала → причина halted; npm test 261/261
 - 2026-11-01 11:25 Task 3: сделано — lib/queue.mjs: loadQueue/saveQueue (атомарно, битый файл → error без падения), enqueue/removeAt/moveUp, pickNext (+missing для пропавших планов), shouldPreempt только выше текущего; npm test 283/283
+- 2026-11-01 11:44 Task 4: сделано — демон следует queue.json (followQueue между задачами: завершённые/пропавшие планы убираются с уведомлением, «Ждёт вас» раз на задачу, переключение на следующий план и возврат к плану выше в очереди), перепроверка ожидающих раз в queueRecheckSeconds (60 с), attemptsByPlan при переключениях, switch.json ставит план первым (только если queue.json есть); npm test 289/289

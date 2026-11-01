@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   listProjects, progressPathFor, listPlans, findPlan, effectiveConfig, requestSwitch, takeSwitch, applySwitch,
-  mentionContext, projectError, projectByDir,
+  mentionContext, projectError, projectByDir, queueSwitch,
 } from '../lib/projects.mjs';
 import { loadState, saveState } from '../lib/state.mjs';
 
@@ -188,4 +188,28 @@ test('projectByDir: запись без projectDir не роняет поиск 
   cfg.projects.unshift({ name: 'broken', plansDir: 'plans' });
   assert.equal(projectByDir(cfg, BETA + '/').name, 'beta');
   assert.equal(projectByDir(cfg, '/elsewhere'), undefined);
+});
+
+test('applySwitch с from хранит попытки по плану: возврат к плану не сбрасывает счётчики', () => {
+  const dir = tempDir('ap-');
+  const a = { projectDir: ALPHA, planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md' };
+  const b = { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
+  saveState(dir, { status: 'idle', currentTask: 'Task 2', attempts: { 'Task 2': 2 }, nextAttemptAt: null, reason: null, updatedAt: null });
+  applySwitch(dir, b, a);
+  assert.deepEqual(loadState(dir).attempts, {});
+  saveState(dir, { ...loadState(dir), attempts: { 'Task 1': 1 } });
+  applySwitch(dir, a, b);
+  assert.deepEqual(loadState(dir).attempts, { 'Task 2': 2 });
+  applySwitch(dir, b, a);
+  assert.deepEqual(loadState(dir).attempts, { 'Task 1': 1 });
+});
+
+test('queueSwitch ставит план первым, только если очередь есть', () => {
+  const dir = tempDir('ap-');
+  const b = { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
+  queueSwitch(dir, b);
+  assert.deepEqual(readdirSync(dir), []);
+  writeFileSync(join(dir, 'queue.json'), JSON.stringify([{ projectDir: ALPHA, planPath: 'plans/2026-02-b.md', addedAt: 'x' }]));
+  queueSwitch(dir, b);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'queue.json'), 'utf8')).map(x => x.planPath), ['plans/other.md', 'plans/2026-02-b.md']);
 });
