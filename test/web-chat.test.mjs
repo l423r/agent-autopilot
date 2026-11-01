@@ -246,3 +246,18 @@ test('правила: в планах нет шага git push (planner-prompt �
   const req = readme.slice(readme.indexOf('## Требования к плану'), readme.indexOf('## Команды'));
   assert.match(req, /`git push`.*`pushAfterTask`/);
 });
+
+test('правила: [planner]/[manual] и очередь (planner-prompt и README)', () => {
+  const prompt = readFileSync(promptFile, 'utf8');
+  assert.match(prompt, /\*\*`\[planner\]`\*\*/);
+  assert.match(prompt, /\*\*`\[manual\]`\*\*/);
+  assert.match(prompt, /хотя бы одна галочка/);
+  assert.match(prompt, /autopilot\.mjs queue add/);
+  assert.match(prompt, /«Запустить».*`switch\.json`|`switch\.json`.*«Запустить»/);
+  assert.match(prompt, /не обещать «переключится сам»/);
+  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  const req = readme.slice(readme.indexOf('## Требования к плану'), readme.indexOf('## Команды'));
+  assert.match(req, /`\[planner\]`/);
+  assert.match(req, /`\[manual\]`/);
+  assert.match(req, /queue add/);
+});
