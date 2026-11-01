@@ -50,6 +50,16 @@ writeFileSync(join(otherDir, 'plans', '2026-10-21-pult-v2.md'),
 const stateDir = join(work, 'state');
 mkdirSync(stateDir);
 writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ status: 'running', currentTask: 'Task 7' }));
+// The queue: the running plan and one stopped on a [manual] task («Ждёт вас»).
+writeFileSync(join(projectDir, 'plans', 'domain-seo.md'), [
+  '# Домен и SEO', '', '### Task 1: [manual] Купить домен', '',
+  '- [ ] **Step 1:** Купите домен у регистратора и пришлите имя в чат.',
+  '- [ ] **Step 2:** Привяжите его к хостингу (A-запись на IP сервера).', '',
+  '### Task 2: Настроить SEO', '', '- [ ] **Step 1:** Добавить sitemap.xml', ''].join('\n'));
+writeFileSync(join(stateDir, 'queue.json'), JSON.stringify([
+  { projectDir, planPath: join('plans', basename(PLAN)), progressPath: join('plans', basename(PLAN)).replace(/\.md$/, '.progress.md') },
+  { projectDir, planPath: 'plans/domain-seo.md', progressPath: 'plans/domain-seo.progress.md' },
+]));
 
 const ntfyBodies = [];
 const ntfy = createServer((req, res) => {
@@ -299,6 +309,10 @@ try {
   await page.waitForSelector('#projects .project.active .card-head');
   const names = await page.$$eval('#projects .project .pname', ns => ns.map(n => n.textContent));
   if (names.join() !== 'sigaret,autopilot') fail(`проекты во вкладке «План»: ${names}`);
+  await page.waitForSelector('#queue .qrow');
+  const qrows = await page.$$eval('#queue .qrow', ns => ns.map(n => n.innerText.replace(/\s+/g, ' ').trim()));
+  if (qrows.length !== 2 || !qrows[1].includes('ждёт вас: Task 1')) fail(`очередь: ${JSON.stringify(qrows)}`);
+  await shot('queue');
   await shot('plan-projects');
   await page.click('#projects .project.active .card-head');
   await page.waitForSelector('#projects .plan .task');
@@ -362,6 +376,10 @@ try {
   await page.click('nav.tabs button[data-tab="status"]');
   await page.waitForFunction(() => document.getElementById('status-text').textContent.startsWith('Статус'));
   await shot('status');
+  await page.waitForSelector('#waiting:not(.hidden) li');
+  const waiting = await page.$eval('#waiting', n => n.innerText);
+  if (!waiting.includes('domain-seo.md — Task 1: Купить домен') || !waiting.includes('Привяжите его к хостингу')) fail(`«Ждёт вас»: ${waiting}`);
+  await shot('waiting');
 
   await page.click('#pause-btn');
   await page.waitForSelector('#cmd-note.ok');

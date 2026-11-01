@@ -146,8 +146,8 @@
 
 **Files:** Modify `web/server.mjs` (`GET /api/queue`, `POST /api/queue/up|remove`, «Запустить» ставит первым), `web/index.html`, `scripts/web-screenshots.mjs`; Test `test/web-server.test.mjs`
 
-- [ ] **Step 1:** Тесты API: формат ответа, `up` и `remove`, CSRF и авторизация, как у остальных POST. `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать:
+- [x] **Step 1:** Тесты API: формат ответа, `up` и `remove`, CSRF и авторизация, как у остальных POST. `npm test` → FAIL.
+- [x] **Step 2:** Реализовать:
   - блок «Ждёт вас» вверху вкладки «Статус» (только если есть), у каждой задачи текст шага;
   - блок «Очередь» во вкладке «План»;
   - снимки `web-queue.png` и `web-waiting.png` просмотрены (Read).

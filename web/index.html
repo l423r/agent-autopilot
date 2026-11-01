@@ -146,6 +146,20 @@
   .bar.small { height: 6px; }
   .phase { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
 
+  /* Queue and «Ждёт вас» */
+  .queue, .waiting ul { list-style: none; margin: 0 0 12px; padding: 0; }
+  .qrow { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .qrow .qinfo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .qrow .qname { font-weight: 600; }
+  .qrow .meta { font-size: 13px; color: var(--muted); margin: 4px 0 6px; }
+  .qrow .btn { min-height: 44px; min-width: 44px; padding: 0 12px; }
+  .waiting { background: var(--panel); border: 1px solid var(--warn); border-radius: 12px; padding: 14px; margin: 0 0 16px; }
+  .waiting .wname { font-weight: 600; color: var(--warn); margin-bottom: 8px; }
+  .waiting li { padding: 8px 0; border-top: 1px solid var(--line); }
+  .waiting li:first-child { border-top: none; padding-top: 0; }
+  .waiting .wplan { font-weight: 600; overflow-wrap: anywhere; }
+  .waiting .wtext { margin-top: 6px; font-size: 14px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+
   /* Limits */
   .limit { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
   .limit .row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
@@ -198,6 +212,11 @@
         <button class="btn ghost" id="plan-refresh" type="button">Обновить</button>
       </div>
       <div class="note hidden" id="switch-note"></div>
+      <div class="queue-box hidden" id="queue-box">
+        <div class="phase">Очередь</div>
+        <ul class="queue" id="queue"></ul>
+        <div class="note hidden" id="queue-note"></div>
+      </div>
       <ul class="projects" id="projects"></ul>
     </div>
   </section>
@@ -214,6 +233,10 @@
 
   <section id="tab-status">
     <div class="scroll">
+      <div class="waiting hidden" id="waiting">
+        <div class="wname">Ждёт вас</div>
+        <ul id="waiting-list"></ul>
+      </div>
       <pre class="status-text" id="status-text">…</pre>
       <div class="actions">
         <button class="btn" id="pause-btn" type="button">⏸ Пауза</button>
@@ -274,7 +297,58 @@ function setPill(state) {
   $('pill-text').textContent = names[status] || status;
 }
 
+// «Очередь» (вкладка «План») и «Ждёт вас» (вкладка «Статус») — из одного /api/queue; без очереди оба блока скрыты.
+async function loadQueueView() {
+  let q;
+  try { q = await api('api/queue'); } catch { return; }
+  const list = $('queue');
+  list.replaceChildren();
+  q.items.forEach(item => {
+    const li = el('li', 'qrow');
+    const info = el('div', 'qinfo');
+    info.append(el('div', 'qname', `${item.n}. ${item.project} / ${fileName(item.plan)}`));
+    info.append(el('div', 'meta', item.error ? `Ошибка: ${item.error}` : `Выполнено ${item.done} из ${item.total}${item.waiting ? ` · ждёт вас: ${item.waiting.id}` : ''}`));
+    if (!item.error) info.append(progressBar(item.done, item.total, 'bar small'));
+    li.append(info);
+    for (const [label, title, act] of [['↑', 'Выше', 'up'], ['✕', 'Убрать из очереди', 'remove']]) {
+      const b = el('button', 'btn ghost', label);
+      b.type = 'button';
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      if (act === 'up' && item.n === 1) b.disabled = true;
+      b.addEventListener('click', () => queueAct(act, item, b));
+      li.append(b);
+    }
+    list.append(li);
+  });
+  $('queue-box').classList.toggle('hidden', !q.items.length && !q.error);
+  const note = $('queue-note');
+  note.classList.toggle('hidden', !q.error);
+  if (q.error) { note.className = 'note bad'; note.textContent = `Очередь не читается: ${q.error}`; }
+  const wl = $('waiting-list');
+  wl.replaceChildren(...q.waiting.map(w => {
+    const li = el('li');
+    li.append(el('div', 'wplan', `${w.project} / ${fileName(w.plan)} — ${w.waiting.id}: ${w.waiting.title}`), el('div', 'wtext', w.waiting.text));
+    return li;
+  }));
+  $('waiting').classList.toggle('hidden', !q.waiting.length);
+}
+
+async function queueAct(act, item, btn) {
+  if (act === 'remove' && !confirm(`Убрать ${item.project} / ${fileName(item.plan)} из очереди?`)) return;
+  btn.disabled = true;
+  try {
+    await api(`api/queue/${act}`, { n: item.n });
+  } catch (err) {
+    const note = $('queue-note');
+    note.className = 'note bad';
+    note.textContent = `✗ Не удалось: ${err.message}`;
+  }
+  loadQueueView();
+}
+
 async function loadStatus() {
+  loadQueueView();
   try {
     const s = await api('api/status');
     $('status-text').textContent = s.text;
@@ -826,6 +900,7 @@ function projectCard(project) {
 }
 
 async function loadPlan() {
+  loadQueueView();
   const list = $('projects');
   openTasks = new Map();
   for (const ul of list.querySelectorAll('ul.tasks[data-key]')) {

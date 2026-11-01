@@ -553,3 +553,84 @@ test('GET /api/plan: модель из пометки, в названии её 
   const p = await json(await get('/api/plan'));
   assert.deepEqual(p.tasks.map(t => [t.title, t.model]), [['Заявки', 'sonnet'], ['Выкладка', 'haiku'], ['Без пометки', null]]);
 });
+
+const BETA = { projectDir: join(FIX, 'beta'), planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
+const queueFile = () => join(cfg.stateDir, 'queue.json');
+const readQueue = () => JSON.parse(readFileSync(queueFile(), 'utf8'));
+
+test('GET /api/queue: пусто без queue.json', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  await start();
+  assert.deepEqual(await json(await get('/api/queue')), { items: [], waiting: [] });
+});
+
+test('GET /api/queue: очередь с прогрессом, «ждёт вас» с текстом шага, пропавший план — ошибкой', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  const manual = join(root, 'manual.md');
+  writeFileSync(manual, '# M\n\n### Task 1: [manual] Купить домен\n\n- [ ] **Step 1:** Купите домен у регистратора\n\n### Task 2: потом\n\n- [ ] x\n');
+  writeFileSync(queueFile(), JSON.stringify([
+    ALPHA_B,
+    { projectDir: root, planPath: 'manual.md', progressPath: 'manual.progress.md' },
+    { projectDir: join(FIX, 'beta'), planPath: 'plans/gone.md', progressPath: 'plans/gone.progress.md' },
+  ]));
+  await start();
+  const q = await json(await get('/api/queue'));
+  assert.equal(q.items.length, 3);
+  assert.deepEqual(q.items.map(i => i.n), [1, 2, 3]);
+  assert.equal(q.items[0].project, 'alpha');
+  assert.equal(q.items[0].plan, 'plans/2026-02-b.md');
+  assert.equal(q.items[0].done, 1);
+  assert.equal(q.items[0].total, 3);
+  assert.equal(q.items[0].waiting, null);
+  assert.equal(q.items[1].waiting.id, 'Task 1');
+  assert.equal(q.items[1].waiting.title, 'Купить домен');
+  assert.match(q.items[1].waiting.text, /Купите домен у регистратора/);
+  assert.ok(q.items[2].error);
+  assert.deepEqual(q.waiting.map(w => w.n), [2]);
+});
+
+test('GET /api/queue: битый queue.json — error, не падение', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  writeFileSync(queueFile(), '{oops');
+  await start();
+  const r = await get('/api/queue');
+  assert.equal(r.status, 200);
+  const q = await json(r);
+  assert.deepEqual(q.items, []);
+  assert.ok(q.error);
+});
+
+test('POST /api/queue/up и /remove меняют queue.json; 400/404 на плохой номер', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  writeFileSync(queueFile(), JSON.stringify([ALPHA_B, BETA]));
+  await start();
+  let r = await post('/api/queue/up', { n: 2 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(readQueue().map(x => x.planPath), ['plans/other.md', 'plans/2026-02-b.md']);
+  assert.deepEqual((await json(r)).items.map(i => i.n), [1, 2]);
+  r = await post('/api/queue/remove', { n: 1 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(readQueue().map(x => x.planPath), ['plans/2026-02-b.md']);
+  for (const [path, body] of [
+    ['/api/queue/up', { n: 0 }], ['/api/queue/up', { n: 'x' }], ['/api/queue/remove', {}], ['/api/queue/remove', { n: 1.5 }],
+  ]) assert.equal((await post(path, body)).status, 400, `${path} ${JSON.stringify(body)}`);
+  for (const path of ['/api/queue/up', '/api/queue/remove']) assert.equal((await post(path, { n: 5 })).status, 404, path);
+  assert.equal(readQueue().length, 1);
+});
+
+test('POST /api/queue/*: без queue.json 404, GET на POST-маршрут не проходит', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  await start();
+  assert.equal((await post('/api/queue/remove', { n: 1 })).status, 404);
+  assert.equal(existsSync(queueFile()), false);
+  assert.equal((await get('/api/queue/remove')).status, 404);
+});
+
+test('POST /api/switch при очереди ставит план первым', async () => {
+  withProjects({ active: ALPHA_B, status: 'running' });
+  writeFileSync(queueFile(), JSON.stringify([ALPHA_B]));
+  await start();
+  assert.equal((await post('/api/switch', { project: 'beta', plan: 'plans/other.md' })).status, 200);
+  assert.deepEqual(readQueue().map(x => x.planPath), ['plans/other.md', 'plans/2026-02-b.md']);
+  assert.equal(JSON.parse(readFileSync(join(cfg.stateDir, 'switch.json'), 'utf8')).planPath, 'plans/other.md');
+});

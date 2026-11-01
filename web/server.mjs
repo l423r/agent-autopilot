@@ -3,16 +3,17 @@
 // pause/resume through the ntfy command topic. Listens on 127.0.0.1 only; Caddy adds the password.
 import { createServer } from 'node:http';
 import { readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
-import { parsePlan } from '../lib/plan.mjs';
+import { parsePlan, nextTask, allDone } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { statusText } from '../lib/commands.mjs';
 import { killOrphan } from '../lib/runner.mjs';
-import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, mentionContext, projectError } from '../lib/projects.mjs';
+import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, queueSwitch, projectByDir, mentionContext, projectError } from '../lib/projects.mjs';
+import { loadQueue, saveQueue, removeAt, moveUp } from '../lib/queue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_TEXT = 20_000;
@@ -64,6 +65,36 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       const currentPlan = isActive ? active.planPath : (plans.find(p => !p.finished) ?? plans[0])?.planPath ?? null;
       return { name: project.name, projectDir: project.projectDir, active: isActive, status: isActive ? state.status : null, currentPlan, plans };
     });
+  };
+
+  // Queue rows for the panel: progress per plan and, for a plan stopped on a [manual] task, its step text.
+  const queueView = () => {
+    const { items, error } = loadQueue(cfg.stateDir);
+    const rows = items.map((target, i) => {
+      const row = { n: i + 1, project: projectByDir(effectiveConfig(cfg), target.projectDir)?.name ?? basename(target.projectDir), plan: target.planPath, waiting: null };
+      try {
+        const markdown = readFileSync(resolve(target.projectDir, target.planPath), 'utf8');
+        const plan = parsePlan(markdown);
+        const next = allDone(plan) ? null : nextTask(plan);
+        Object.assign(row, { done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length });
+        if (next?.kind === 'user') row.waiting = { id: next.id, title: next.title, text: taskBodies(markdown).get(next.id) ?? '' };
+      } catch (err) {
+        row.error = err.code === 'ENOENT' ? 'нет файла плана' : err.message;
+      }
+      return row;
+    });
+    return { items: rows, waiting: rows.filter(r => r.waiting), ...(error ? { error } : {}) };
+  };
+
+  // Changes of queue.json go through here: n is the 1-based number shown in the panel.
+  const queueEdit = async (req, res, edit) => {
+    const body = await readJson(req);
+    if (!Number.isInteger(body?.n) || body.n < 1) return sendJson(res, 400, { error: 'Нужен номер записи очереди' });
+    const { items, error } = loadQueue(cfg.stateDir);
+    if (error) return sendJson(res, 409, { error: 'Очередь не читается' });
+    if (body.n > items.length) return sendJson(res, 404, { error: 'Нет такой записи' });
+    saveQueue(cfg.stateDir, edit(items, body.n - 1));
+    sendJson(res, 200, queueView());
   };
 
   // One upstream request per minute at most; concurrent callers share it. Errors are cached too.
@@ -166,12 +197,18 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       sendJson(res, 200, { text: statusText(state, plan), state });
     },
 
+    'GET /api/queue': (req, res) => sendJson(res, 200, queueView()),
+    'POST /api/queue/up': (req, res) => queueEdit(req, res, moveUp),
+    'POST /api/queue/remove': (req, res) => queueEdit(req, res, removeAt),
+
     'POST /api/switch': async (req, res) => {
       const body = await readJson(req);
       const found = findPlan(effectiveConfig(cfg), body?.project, body?.plan);
       if (!found) return sendJson(res, 404, { error: 'План не найден' });
       if (found.plan.finished) return sendJson(res, 409, { error: 'План уже выполнен' });
-      requestSwitch(cfg.stateDir, { projectDir: found.project.projectDir, planPath: found.plan.planPath, progressPath: found.plan.progressPath });
+      const target = { projectDir: found.project.projectDir, planPath: found.plan.planPath, progressPath: found.plan.progressPath };
+      requestSwitch(cfg.stateDir, target);
+      queueSwitch(cfg.stateDir, target); // «Запустить» ставит план первым в очереди, если она есть
       sendJson(res, 200, { ok: true, when: loadState(cfg.stateDir).status === 'running' ? 'after-task' : 'now' });
     },
 
@@ -248,6 +285,23 @@ function freshest(entries, limit) {
     i--;
   }
   return entries.slice(i);
+}
+
+// Each task's own text: from its heading up to the next task or phase heading (same cut as the panel).
+const TASK_HEAD = /^#{2,4}\s+Task\s+(\d+)\b/;
+function taskBodies(markdown) {
+  const bodies = new Map();
+  let id = null;
+  let lines = [];
+  const flush = () => { if (id) bodies.set(id, lines.join('\n').trim()); };
+  for (const line of markdown.split(/\r?\n/)) {
+    const m = line.match(TASK_HEAD);
+    if (m) { flush(); id = `Task ${m[1]}`; lines = []; continue; }
+    if (/^#{1,2}\s/.test(line) || /^---\s*$/.test(line)) { flush(); id = null; lines = []; continue; }
+    if (id) lines.push(line);
+  }
+  flush();
+  return bodies;
 }
 
 const sseFrame = ({ type, ...data }) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
