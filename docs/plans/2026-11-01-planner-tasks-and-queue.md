@@ -82,14 +82,14 @@
 
 **Files:** Create `planner-task-prompt.md`; Modify `lib/decide.mjs`, `autopilot.mjs` (выбор промпта, модель по умолчанию `opus` для `planner`), `README.md`; Test `test/decide.test.mjs`, `test/cli.test.mjs` (на `fake-claude.sh`)
 
-- [ ] **Step 1:** Тесты:
+- [x] **Step 1:** Тесты:
   - `decide` для `planner` → `run`;
   - `cli`: `[planner]`-задача запускается с промптом, содержащим текст роли планировщика и правила из Global Constraints;
   - модель без пометки — `opus`;
   - fake-claude, вернувший «НУЖЕН ЧЕЛОВЕК», без галочки → попытка не удалась, после `maxAttempts` `halted` с причиной из журнала.
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать. `planner-task-prompt.md` — правила из Global Constraints дословно по смыслу, коротко. `npm test` → PASS. **Commit** — `feat: run [planner] tasks automatically`
+- [x] **Step 2:** Реализовать. `planner-task-prompt.md` — правила из Global Constraints дословно по смыслу, коротко. `npm test` → PASS. **Commit** — `feat: run [planner] tasks automatically`
 
 ### Task 3: Очередь — данные и выбор · model: opus
 

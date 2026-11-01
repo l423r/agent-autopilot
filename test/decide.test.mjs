@@ -123,3 +123,34 @@ test('resume after done re-runs when plan gained new task', () => {
   const d = decide(r, p, now, cfg);
   assert.equal(d.task.id, 'Task 5');
 });
+
+test('[planner] task runs like an ordinary one', () => {
+  const p = parsePlan(`### Task 1: [planner] Выкладка
+- [ ] s`);
+  const d = decide(initialState(), p, now, cfg);
+  assert.equal(d.action, 'run');
+  assert.equal(d.task.kind, 'planner');
+});
+
+test('a failure note from the run is kept and becomes the halted reason', () => {
+  const p = parsePlan(`### Task 1: [planner] Выкладка
+- [ ] s`);
+  const t = p.tasks[0];
+  let s = initialState();
+  for (let i = 0; i < cfg.maxAttempts; i++) {
+    s = applyResult(s, t, { kind: 'ok', note: 'НУЖЕН ЧЕЛОВЕК: нет ключа' }, p, now, cfg);
+  }
+  assert.equal(s.lastNote, 'НУЖЕН ЧЕЛОВЕК: нет ключа');
+  const d = decide({ ...s, status: 'idle', nextAttemptAt: null }, p, now, cfg);
+  assert.equal(d.status, 'halted');
+  assert.match(d.reason, /Task 1 не удалась 3 раз подряд: НУЖЕН ЧЕЛОВЕК: нет ключа/);
+});
+
+test('a finished task clears the failure note', () => {
+  const s = applyResult({ ...initialState(), lastNote: 'старое' }, task2, { kind: 'ok' }, planTask2Done, now, cfg);
+  assert.equal(s.lastNote, null);
+});
+
+test('resume forgets the failure note', () => {
+  assert.equal(resume({ ...initialState(), status: 'halted', lastNote: 'НУЖЕН ЧЕЛОВЕК: x' }).lastNote, null);
+});

@@ -46,6 +46,20 @@ function loadConfig() {
 }
 
 const readPlan = cfg => parsePlan(readFileSync(resolve(cfg.projectDir, cfg.planPath), 'utf8'));
+const readProgress = cfg => { try { return readFileSync(resolve(cfg.projectDir, cfg.progressPath), 'utf8'); } catch { return ''; } };
+
+// [planner] tasks run with the planner's chat role plus the rules for running a task alone.
+function promptTemplate(task) {
+  if (task.kind !== 'planner') return readFileSync(join(HERE, 'prompt.md'), 'utf8');
+  return readFileSync(join(HERE, 'web', 'planner-prompt.md'), 'utf8') + readFileSync(join(HERE, 'planner-task-prompt.md'), 'utf8');
+}
+
+// «НУЖЕН ЧЕЛОВЕК: …» written to the project log by this run (lines added after `before`).
+function needHumanNote(before, after, task) {
+  const added = after.startsWith(before) ? after.slice(before.length) : after;
+  const line = added.split('\n').filter(l => l.includes(`${task.id}:`) && l.includes('НУЖЕН ЧЕЛОВЕК')).at(-1);
+  return line ? line.slice(line.indexOf('НУЖЕН ЧЕЛОВЕК')).trim() : null;
+}
 
 function logEvent(cfg, message) {
   mkdirSync(cfg.logDir, { recursive: true });
@@ -100,7 +114,8 @@ async function step(cfg) {
   logEvent(cfg, `run ${d.task.id}${model ? ` (${model}, попытка ${attempt})` : ''}: ${d.task.title}`);
   saveState(cfg.stateDir, markRunning(state, d.task, now, model));
   commands.busy = true;
-  const template = readFileSync(join(HERE, 'prompt.md'), 'utf8');
+  const template = promptTemplate(d.task);
+  const progressBefore = readProgress(cfg);
   const raw = await runIteration({
     task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
     claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
@@ -110,6 +125,7 @@ async function step(cfg) {
   });
   const finishedAt = new Date();
   const result = classify(raw, finishedAt, cfg);
+  const note = needHumanNote(progressBefore, readProgress(cfg), d.task);
   let planAfter;
   try {
     planAfter = readPlan(cfg);
@@ -117,7 +133,7 @@ async function step(cfg) {
     logEvent(cfg, `план не читается после ${d.task.id}: ${err.message}`);
     planAfter = { tasks: [] };
   }
-  let next = applyResult(state, d.task, result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result, planAfter, finishedAt, cfg);
+  let next = applyResult(state, d.task, { ...(result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result), note }, planAfter, finishedAt, cfg);
   const pauseNow = commands.pauseAfterTask && !STOPPED.includes(next.status);
   if (pauseNow) next = { ...next, status: 'paused', nextAttemptAt: null, reason: 'Пауза по команде с телефона' };
   saveState(cfg.stateDir, next);

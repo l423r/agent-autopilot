@@ -617,3 +617,46 @@ test('task models end to end: once ×3 with fake-claude.sh → run log, runs.jso
   assert.match(stdout, /по умолчанию/);
   assert.doesNotMatch(stdout, /пропущено строк/);
 });
+
+function setupPlanner(planText) {
+  const { root, cfg } = setup('- 2026-10-31 Task 2: НЕ СДЕЛАНО — НУЖЕН ЧЕЛОВЕК: старая запись\n');
+  writeFileSync(join(root, 'plan.md'), planText);
+  const fakeSh = fileURLToPath(new URL('./fixtures/fake-claude.sh', import.meta.url));
+  const env = mode => ({
+    ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fakeSh, FAKE_MODE: mode,
+    FAKE_PLAN: join(root, 'plan.md'), FAKE_PROGRESS: join(root, 'progress.md'), FAKE_PROMPT_OUT: join(root, 'prompt.txt'),
+  });
+  return { root, cfg, go: (args, mode) => run('node', [cli, ...args], { env: env(mode), timeout: 30_000 }) };
+}
+
+test('planner: [planner] task runs with the planner role and rules, opus by default', async () => {
+  const { root, go } = setupPlanner(PLAN.replace('### Task 2: two', '### Task 2: [planner] Выкладка'));
+  await go(['once'], 'tick');
+  const prompt = readFileSync(join(root, 'prompt.txt'), 'utf8');
+  assert.match(prompt, /Ты — планировщик проектов на этом сервере/);
+  assert.match(prompt, /ТОЛЬКО шаги `Task 2: Выкладка`/);
+  assert.match(prompt, /откат/);
+  assert.match(prompt, /НУЖЕН ЧЕЛОВЕК/);
+  assert.match(prompt, /progress\.md/);
+  assert.doesNotMatch(prompt, /\{\{/);
+  assert.match(readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8'), /run Task 2 \(opus, попытка 1\): Выкладка\n/);
+  assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /### Task 2: \[planner\] Выкладка\n- \[x\]/);
+});
+
+test('planner: an ordinary task keeps the usual prompt', async () => {
+  const { root, go } = setupPlanner(PLAN);
+  await go(['once'], 'tick');
+  const prompt = readFileSync(join(root, 'prompt.txt'), 'utf8');
+  assert.doesNotMatch(prompt, /планировщик/);
+  assert.match(prompt, /Выполни ТОЛЬКО `Task 2: two`/);
+});
+
+test('planner: «НУЖЕН ЧЕЛОВЕК» without ticks → failed attempts, then halted with the reason from the log', async () => {
+  const { root, go } = setupPlanner(PLAN.replace('### Task 2: two', '### Task 2: [planner] Выкладка'));
+  await go(['run'], 'need-human');
+  const s = state(root);
+  assert.equal(s.status, 'halted');
+  assert.match(s.reason, /Task 2 не удалась 3 раз подряд: НУЖЕН ЧЕЛОВЕК: нет доступа к серверу/);
+  assert.match(readFileSync(join(root, 'plan.md'), 'utf8'), /### Task 2: \[planner\] Выкладка\n- \[ \]/);
+  assert.equal((readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8').match(/run Task 2 \(opus/g) ?? []).length, 3);
+});

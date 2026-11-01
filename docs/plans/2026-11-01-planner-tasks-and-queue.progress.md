@@ -1,1 +1,2 @@
 - 2026-11-01 11:14 Task 1: сделано — пометка [planner], task.kind (auto|planner|user), warnings у плана; npm test 254/254
+- 2026-11-01 11:20 Task 2: сделано — [planner]-задачи запускаются с промптом planner-prompt.md + planner-task-prompt.md, модель по умолчанию opus, «НУЖЕН ЧЕЛОВЕК» из журнала → причина halted; npm test 261/261
