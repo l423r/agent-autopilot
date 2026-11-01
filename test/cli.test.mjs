@@ -781,6 +781,70 @@ test('queue: пропавший план пропускается с уведо�
   assert.match(readFileSync(join(b.root, 'logs', 'autopilot.log'), 'utf8'), /queue\.json/);
 });
 
+// --- queue review fixes ---
+
+test('queue: current plan deleted, the other plan waits for the user → waiting-user, no crash', async () => {
+  const { root } = setup();
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'w.md'), QWAIT);
+  rmSync(join(root, 'plan.md'));
+  writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify([qItem(root, 'plan.md'), qItem(root, 'w.md')]));
+  await exec(root, ['once'], 'tick');
+  const s = state(root);
+  assert.equal(s.status, 'waiting-user');
+  assert.match(s.reason, /w\.md/);
+});
+
+test('queue: an edit to queue.json while a notification is being sent is kept', async () => {
+  const { createServer } = await import('node:http');
+  const { root, cfg } = setup();
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'c.md'), QC);
+  writeFileSync(join(root, 'x.md'), QB);
+  writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify([qItem(root, 'c.md'), qItem(root, 'plan.md')]));
+  // «План выполнен» is answered late; meanwhile the panel adds x.md to the queue.
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', d => (body += d)).on('end', () => {
+      if (!/План выполнен/.test(body)) return res.end("{}");
+      const q = JSON.parse(readFileSync(join(root, 'state', 'queue.json'), 'utf8'));
+      writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify([...q, qItem(root, 'x.md')]));
+      setTimeout(() => res.end('{}'), 300);
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...cfg, ntfyServer: `http://127.0.0.1:${server.address().port}`, ntfyTopic: 'tp' }));
+  try {
+    await exec(root, ['once'], 'tick');
+  } finally {
+    server.close();
+  }
+  assert.deepEqual(queueOf(root).map(x => x.planPath), ['plan.md', 'x.md']);
+});
+
+test('queue: the active plan missing from the queue goes to its end, not first', async () => {
+  const { root } = setup();
+  mkdirSync(join(root, 'state'), { recursive: true });
+  writeFileSync(join(root, 'b.md'), QB);
+  writeFileSync(join(root, 'state', 'queue.json'), JSON.stringify([qItem(root, 'b.md')]));
+  await run('node', [cli, 'once'], {
+    cwd: root, timeout: 30_000,
+    env: { ...process.env, AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fake, FAKE_MODE: 'tick', FAKE_PLAN: '' },
+  });
+  assert.deepEqual(queueOf(root).map(x => x.planPath), ['b.md', 'plan.md']);
+  assert.match(readFileSync(join(root, 'b.md'), 'utf8'), /### Task 1: b-one\n- \[x\]/);
+  assert.equal(readFileSync(join(root, 'plan.md'), 'utf8'), PLAN);
+});
+
+test('plan warnings go to the log once', async () => {
+  const { root } = setup();
+  writeFileSync(join(root, 'plan.md'), PLAN.replace('### Task 2: two\n- [ ] s', '### Task 2: [planner] Выкладка\n- [ ] s: `systemctl restart agent-autopilot`'));
+  // Task 2 turns [manual]: run stops on it after several steps in one daemon.
+  await exec(root, ['run'], 'tick');
+  const log = readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8');
+  assert.equal((log.match(/Task 2: \[planner\] с рестартом agent-autopilot/g) ?? []).length, 1, log);
+});
+
 // --- queue commands ---
 const CLI_WAITING_PLAN = `### Task 1: one
 - [x] s

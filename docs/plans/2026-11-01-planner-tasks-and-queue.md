@@ -167,6 +167,104 @@
 
   `npm test` → PASS. **Commit** — `docs: planner rules for [planner] tasks and queue`
 
+### Task 9: [planner] Выкладка · model: opus` → `kind: 'planner'`, `model: 'opus'`;
+  - `[manual]` → `user`;
+  - без пометки → `auto`;
+  - порядок пометок любой;
+  - `[planner]` со строкой `systemctl restart agent-autopilot` в шагах → `user` и предупреждение.
+
+  `npm test` → FAIL.
+- [x] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(plan): [planner] task kind`
+
+### Task 2: Запуск `[planner]`-задач · model: opus
+
+**Files:** Create `planner-task-prompt.md`; Modify `lib/decide.mjs`, `autopilot.mjs` (выбор промпта, модель по умолчанию `opus` для `planner`), `README.md`; Test `test/decide.test.mjs`, `test/cli.test.mjs` (на `fake-claude.sh`)
+
+- [x] **Step 1:** Тесты:
+  - `decide` для `planner` → `run`;
+  - `cli`: `[planner]`-задача запускается с промптом, содержащим текст роли планировщика и правила из Global Constraints;
+  - модель без пометки — `opus`;
+  - fake-claude, вернувший «НУЖЕН ЧЕЛОВЕК», без галочки → попытка не удалась, после `maxAttempts` `halted` с причиной из журнала.
+
+  `npm test` → FAIL.
+- [x] **Step 2:** Реализовать. `planner-task-prompt.md` — правила из Global Constraints дословно по смыслу, коротко. `npm test` → PASS. **Commit** — `feat: run [planner] tasks automatically`
+
+### Task 3: Очередь — данные и выбор · model: opus
+
+**Files:** Create `lib/queue.mjs`; Test `test/queue.test.mjs`
+
+**Interfaces:** Produces:
+- `loadQueue(stateDir)` → `{ items, error? }`;
+- `saveQueue(stateDir, items)`;
+- `enqueue(items, target, { front })`, `removeAt`, `moveUp`;
+- `pickNext(items, { readPlan })` → `{ target, waiting: [{ target, task }], doneTargets: [] }` по Global Constraints;
+- `shouldPreempt(items, current, { readPlan })` → `target|null` — план выше текущего, который снова можно продолжать.
+
+- [x] **Step 1:** Тесты:
+  - все варианты выбора;
+  - Review Focus 1, 4 (битый файл), 5 (нет файла плана);
+  - `shouldPreempt` только для планов **выше** текущего;
+  - атомарная запись.
+
+  `npm test` → FAIL.
+- [x] **Step 2:** Реализовать (`readPlan` подменяется в тестах). `npm test` → PASS. **Commit** — `feat: plan queue`
+
+### Task 4: Очередь в демоне · model: opus
+
+**Files:** Modify `autopilot.mjs`, `lib/projects.mjs` (`switch.json` → поставить первым в очередь), `lib/notify.mjs`; Test `test/cli.test.mjs`
+
+- [x] **Step 1:** Сквозные тесты на `fake-claude.sh` и трёх временных планах:
+  - A с `user`-задачей в середине, B обычный, C завершён;
+  - старт → A до `user` → переключение на B → C удалён из очереди («План выполнен») → по отметке галочки в A (запись файла) A продолжается после текущей задачи B (Review Focus 2) → всё сделано → `done`;
+  - уведомления «Ждёт вас» по одному разу;
+  - `switch.json` во время работы — план первым;
+  - без `queue.json` — поведение как раньше (существующие тесты зелёные).
+
+  `npm test` → FAIL.
+- [x] **Step 2:** Реализовать:
+  - `waitUntil` будит раз в 60 с для перепроверки ожидающих (без лишних чтений, если `queue.json` нет);
+  - `state.json` хранит попытки по плану: `attemptsByPlan[planKey]`, чтобы возврат к плану не сбрасывал счётчики.
+
+  `npm test` → PASS. **Commit** — `feat: daemon follows the plan queue`
+
+### Task 5: CLI и статус · model: sonnet
+
+**Files:** Modify `autopilot.mjs` (`queue list|add|remove|up`, `status` показывает очередь и «Ждёт вас»), `README.md`; Test `test/cli.test.mjs`
+
+- [x] **Step 1:** Тесты:
+  - `queue add` с несуществующим планом → ошибка;
+  - `list` — номера, проект, план, прогресс, отметка «ждёт вас: Task N»;
+  - `up` и `remove` по номеру;
+  - `status` — блоки «Очередь» и «Ждёт вас».
+
+  `npm test` → FAIL.
+- [x] **Step 2:** Реализовать. `npm test` → PASS. **Commit** — `feat(cli): queue commands`
+
+### Task 6: Пульт — «Очередь» и «Ждёт вас» · model: sonnet
+
+**Files:** Modify `web/server.mjs` (`GET /api/queue`, `POST /api/queue/up|remove`, «Запустить» ставит первым), `web/index.html`, `scripts/web-screenshots.mjs`; Test `test/web-server.test.mjs`
+
+- [x] **Step 1:** Тесты API: формат ответа, `up` и `remove`, CSRF и авторизация, как у остальных POST. `npm test` → FAIL.
+- [x] **Step 2:** Реализовать:
+  - блок «Ждёт вас» вверху вкладки «Статус» (только если есть), у каждой задачи текст шага;
+  - блок «Очередь» во вкладке «План»;
+  - снимки `web-queue.png` и `web-waiting.png` просмотрены (Read).
+
+  `npm test` → PASS. **Commit** — `feat(web): queue and waiting-for-you`
+
+### Task 7: Правила для планировщика · model: haiku
+
+**Files:** Modify `web/planner-prompt.md`, `README.md` («Требования к плану»)
+
+- [x] **Step 1:** Добавить:
+  - **`[planner]`** — всё, что раньше делал планировщик: выкладка тестированным скриптом с откатом, конфиг из уже известных данных, Bot API, проверки на живом сервере;
+  - **`[manual]`** — только то, что требует человека: решения, покупки, аккаунты, проверка с телефона;
+  - у каждой задачи — хотя бы одна галочка;
+  - новый план добавлять в очередь (`autopilot.mjs queue add`), «срочно» — кнопкой «Запустить» или `switch.json`;
+  - не обещать «переключится сам», если план не в очереди.
+
+  `npm test` → PASS. **Commit** — `docs: planner rules for [planner] tasks and queue`
+
 ### Task 8: Проверка результата и ревью · model: opus
 
 - [ ] **Step 1:** `npm test` → PASS; `node scripts/web-screenshots.mjs` → OK, снимки просмотрены. Ручной прогон на временном `stateDir` с тремя планами из Task 4 через настоящий `autopilot.mjs run` и `fake-claude.sh` — лог событий в журнал.

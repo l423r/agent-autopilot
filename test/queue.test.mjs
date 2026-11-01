@@ -181,3 +181,11 @@ test('shouldPreempt: current plan not in the queue → null', () => {
   assert.equal(shouldPreempt([item('auto')], item('other'), { readPlan: reader(PLANS) }), null);
   assert.equal(shouldPreempt([item('auto')], null, { readPlan: reader(PLANS) }), null);
 });
+
+test('enqueue and shouldPreempt treat "/p/" and "/p", "./x.md" and "x.md" as the same plan', () => {
+  const items = [{ projectDir: '/p/', planPath: './x.md', progressPath: 'x.progress.md', addedAt: 'a' }];
+  assert.equal(enqueue(items, { projectDir: '/p', planPath: 'x.md' }).length, 1);
+  assert.equal(enqueue(items, { projectDir: '/p', planPath: 'x.md' }, { front: true }).length, 1);
+  const runnable = parsePlan('### Task 1: t\n- [ ] s\n');
+  assert.equal(shouldPreempt(items, { projectDir: '/p', planPath: 'x.md' }, { readPlan: () => runnable }), null);
+});

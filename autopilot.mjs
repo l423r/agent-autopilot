@@ -16,7 +16,7 @@ import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, validateModelConfig } from './lib/models.mjs';
 import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
-import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt } from './lib/queue.mjs';
+import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt, samePlan } from './lib/queue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -92,11 +92,32 @@ function withProgress(cfg, text) {
   }
 }
 
+// Plan warnings (e.g. a [planner] task turned [manual]) — once per daemon run.
+const loggedWarnings = new Set();
+function logWarnings(cfg, plan) {
+  for (const w of plan.warnings ?? []) {
+    const key = `${cfg.projectDir}|${cfg.planPath}|${w}`;
+    if (loggedWarnings.has(key)) continue;
+    loggedWarnings.add(key);
+    logEvent(cfg, `предупреждение: ${basename(cfg.planPath)} — ${w}`);
+  }
+}
+
 // One decision + its action. Returns 'continue' | 'stop' | { sleepUntil: Date }.
 async function step(cfg) {
   const now = new Date();
   const state = loadState(cfg.stateDir);
-  const d = decide(state, readPlan(cfg), now, cfg);
+  let plan;
+  try {
+    plan = readPlan(cfg);
+  } catch (err) {
+    // With a queue, followQueue has already dropped the missing plan and set waiting-user or done.
+    if (!existsSync(queueFile(cfg))) throw err;
+    logEvent(cfg, `план не читается: ${err.message}`);
+    return 'stop';
+  }
+  logWarnings(cfg, plan);
+  const d = decide(state, plan, now, cfg);
 
   if (d.action === 'stop') {
     if (state.status !== d.status || state.reason !== d.reason) {
@@ -263,7 +284,7 @@ async function applyPendingSwitch(cfg) {
 // --- Plan queue (<stateDir>/queue.json). Without the file everything works as before. ---
 
 const currentTarget = cfg => ({ projectDir: cfg.projectDir, planPath: cfg.planPath, progressPath: cfg.progressPath });
-const sameTarget = (a, b) => a.projectDir === b.projectDir && a.planPath === b.planPath;
+const sameTarget = samePlan;
 const readTarget = t => parsePlan(readFileSync(resolve(t.projectDir, t.planPath), 'utf8'));
 const planLabel = (cfg, t) => `${projectByDir(cfg, t.projectDir)?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
 const queueFile = cfg => join(cfg.stateDir, 'queue.json');
@@ -297,22 +318,13 @@ async function followQueue(cfg) {
   let currentPlan = null;
   try { currentPlan = readPlan(cfg); } catch { /* reported by step() */ }
   let items = q.items;
-  // The active plan always has its place in the queue (first, as a switch would put it).
-  if (currentPlan && !allDone(currentPlan) && !items.some(x => sameTarget(x, current))) items = enqueue(items, current, { front: true });
+  // The active plan always has its place in the queue: at the end, so a plan the user removed
+  // does not jump ahead of the others (a switch puts a plan first via switch.json instead).
+  if (currentPlan && !allDone(currentPlan) && !items.some(x => sameTarget(x, current))) items = enqueue(items, current);
   if (!items.length) return;
 
   const pick = pickNext(items, { readPlan: readTarget });
-  const gone = new Set();
-  for (const t of pick.doneTargets) {
-    gone.add(t);
-    logEvent(cfg, `План выполнен: ${planLabel(cfg, t)}`);
-    await send(cfg, planDoneMessage(planLabel(cfg, t)));
-  }
-  for (const { target: t, error } of pick.missing) {
-    gone.add(t);
-    logEvent(cfg, `План убран из очереди: ${planLabel(cfg, t)} — ${error}`);
-    await send(cfg, planMissingMessage(planLabel(cfg, t), error));
-  }
+  const gone = new Set([...pick.doneTargets, ...pick.missing.map(m => m.target)]);
   const waiting = new Map(pick.waiting.map(w => [w.target, w.task]));
   const fresh = [];
   const since = new Date().toISOString();
@@ -326,7 +338,16 @@ async function followQueue(cfg) {
     fresh.push({ target: x, task });
     return { ...x, waitingUser: { task: task.id, since } };
   });
+  // Saved before the notifications go out: an edit by the panel or the CLI during a slow send is not overwritten.
   if (JSON.stringify(items) !== JSON.stringify(q.items)) saveQueue(cfg.stateDir, items);
+  for (const t of pick.doneTargets) {
+    logEvent(cfg, `План выполнен: ${planLabel(cfg, t)}`);
+    await send(cfg, planDoneMessage(planLabel(cfg, t)));
+  }
+  for (const { target: t, error } of pick.missing) {
+    logEvent(cfg, `План убран из очереди: ${planLabel(cfg, t)} — ${error}`);
+    await send(cfg, planMissingMessage(planLabel(cfg, t), error));
+  }
   for (const { target: t, task } of fresh) {
     logEvent(cfg, `Ждёт вас: ${planLabel(cfg, t)} — ${task.id}: ${task.title}`);
     await send(cfg, waitingMessage(planLabel(cfg, t), task));
