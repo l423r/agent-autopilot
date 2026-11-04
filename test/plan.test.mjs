@@ -107,3 +107,15 @@ test('[planner] with restart of autopilot becomes user with a warning', () => {
   assert.equal(p.warnings.length, 1);
   assert.match(p.warnings[0], /Task 9/);
 });
+
+test('kind marks inside backticks are plain text', () => {
+  const restart = '- [ ] **Step 1:** `systemctl restart agent-autopilot`';
+  for (const mark of ['[planner]', '[manual]']) {
+    const p = parsePlan([`### Task 1: Пометка \`${mark}\` и виды задач · model: sonnet`, restart].join('\n'));
+    assert.equal(p.tasks[0].kind, 'auto');
+    assert.equal(p.tasks[0].model, 'sonnet');
+    assert.equal(p.tasks[0].title, `Пометка \`${mark}\` и виды задач`);
+    assert.deepEqual(p.warnings, []);
+  }
+  assert.equal(parsePlan('### Task 2: [planner] Выкладка').tasks[0].kind, 'planner');
+});

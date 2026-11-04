@@ -30,13 +30,13 @@
 
 **Files:** Modify `lib/plan.mjs`; Test `test/plan.test.mjs`
 
-- [ ] **Step 1:** Тесты:
+- [x] **Step 1:** Тесты:
   - `### Task 1: Пометка \`[planner]\` и виды задач · model: sonnet` → `kind: 'auto'`, `model: 'sonnet'`, `title` с обратными кавычками как есть, предупреждений нет;
   - то же для `` `[manual]` ``;
   - `### Task 2: [planner] Выкладка` → `planner`.
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать: перед поиском пометок вырезать участки `` `…` `` из копии заголовка. `npm test` → PASS. **Commit** — `fix(plan): markers inside backticks are text`
+- [x] **Step 2:** Реализовать: перед поиском пометок вырезать участки `` `…` `` из копии заголовка. `npm test` → PASS. **Commit** — `fix(plan): markers inside backticks are text`
 
 ### Task 2: Продолжение после отметки в текущем плане · model: opus
 
