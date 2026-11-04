@@ -178,6 +178,33 @@ test('accounts: limit without resetAt notes now + retryMinutes', () => {
   assert.equal(s.accountLimits['основная'], new Date(now.getTime() + 15 * 60_000).toISOString());
 });
 
+test('accounts: repeated limits without resetAt double the mark (up to 5 h) instead of switching back every retryMinutes', () => {
+  const min = m => new Date(now.getTime() + m * 60_000).toISOString();
+  let s = applyResult(pre, task2, { kind: 'limit' }, plan, now, two);
+  assert.equal(s.accountLimits['основная'], min(15));
+  for (const m of [30, 60, 120, 240, 300, 300]) {
+    s = applyResult({ ...s, account: 'основная' }, task2, { kind: 'limit' }, plan, now, two);
+    assert.equal(s.accountLimits['основная'], min(m));
+    assert.equal(s.account, 'запасная');
+  }
+});
+
+test('accounts: a run on the account that is not a limit forgets its doubled mark', () => {
+  const s0 = { ...pre, account: 'основная', accountBackoff: { 'основная': 120, 'запасная': 30 } };
+  const ok = applyResult(s0, task2, { kind: 'ok' }, planTask2Done, now, two);
+  assert.deepEqual(ok.accountBackoff, { 'запасная': 30 });
+  const err = applyResult(s0, task2, { kind: 'error' }, plan, now, two);
+  assert.deepEqual(err.accountBackoff, { 'запасная': 30 });
+  const s = applyResult(ok, task2, { kind: 'limit' }, plan, now, two);
+  assert.equal(s.accountLimits['основная'], new Date(now.getTime() + 15 * 60_000).toISOString());
+});
+
+test('accounts: a limit with resetAt uses it and keeps no doubled mark', () => {
+  const s = applyResult({ ...pre, accountBackoff: { 'основная': 60 } }, task2, { kind: 'limit', resetAt: later }, plan, now, two);
+  assert.equal(s.accountLimits['основная'], later.toISOString());
+  assert.deepEqual(s.accountBackoff, {});
+});
+
 test('accounts: one account — a limit sleeps as before, no new fields', () => {
   const s = applyResult(pre, task2, { kind: 'limit', resetAt: later }, plan, now, { ...cfg, accounts: [{ name: 'основная' }] });
   assert.equal(s.status, 'sleeping');

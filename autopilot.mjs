@@ -146,7 +146,11 @@ async function step(cfg) {
     logEvent(cfg, `${d.status}: ${d.reason}`);
     return 'stop';
   }
-  if (d.action === 'sleep') return { sleepUntil: d.until };
+  if (d.action === 'sleep') {
+    // Every account limited while idle (e.g. after «продолжить»): saved, so status shows the sleep and its end.
+    if (state.status !== 'sleeping') saveState(cfg.stateDir, { ...state, status: 'sleeping', nextAttemptAt: d.until.toISOString(), reason: 'Лимит исчерпан', updatedAt: now.toISOString() });
+    return { sleepUntil: d.until };
+  }
 
   const pre = d.account ? { ...state, account: d.account } : state;
   if (d.switched === 'back') await announceAccount(cfg, 'Автопилот: основная учётка', `Вернулся на «${d.account}»`);

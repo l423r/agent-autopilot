@@ -1125,6 +1125,18 @@ test('accounts: a limit on both → one sleeping until the earliest reset, no sw
   assert.equal(a.log().match(/продолжаю на/g).length, 1);
 });
 
+test('accounts: idle with every account limited (after «продолжить») → state saved as sleeping until the earliest reset', async () => {
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const later = new Date(Date.now() + 7_200_000).toISOString();
+  const a = setupAccounts({ preState: { status: 'idle', currentTask: null, attempts: {}, nextAttemptAt: null, reason: null, account: 'запасная', accountLimits: { 'основная': later, 'запасная': soon } } });
+  await a.execA(['once'], 'limit');
+  const s = state(a.root);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.nextAttemptAt, soon);
+  assert.equal(s.reason, 'Лимит исчерпан');
+  assert.equal(existsSync(join(a.root, 'accounts.log')), false);
+});
+
 test('accounts: without accounts a limit sleeps and state.json has no account fields (old state.json reads)', async () => {
   const a = setupAccounts({ accounts: false, preState: { status: 'idle', currentTask: null, attempts: {}, nextAttemptAt: null, reason: null } });
   await a.execA(['once'], 'account');
