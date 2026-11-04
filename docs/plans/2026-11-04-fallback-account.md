@@ -76,7 +76,7 @@
 
 **Files:** Modify `README.md`, `config.example.json`
 
-- [ ] **Step 1:** README: раздел «Запасная учётка» — как работает переключение и возврат, поле `accounts`, `scripts/setup-alt-account.sh`, вход (`CLAUDE_CONFIG_DIR=/root/.claude-alt claude`, затем `/login`), строки `status`, блок лимитов в пульте. `config.example.json` — пример `accounts`. **Commit** — `docs: spare Claude account`
+- [x] **Step 1:** README: раздел «Запасная учётка» — как работает переключение и возврат, поле `accounts`, `scripts/setup-alt-account.sh`, вход (`CLAUDE_CONFIG_DIR=/root/.claude-alt claude`, затем `/login`), строки `status`, блок лимитов в пульте. `config.example.json` — пример `accounts`. **Commit** — `docs: spare Claude account`
 
 ### Task 8: [manual] Вход во вторую учётку
 

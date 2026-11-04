@@ -5,7 +5,7 @@ import { parsePlan } from '../lib/plan.mjs';
 import { decide, applyResult, resume, initialState, markRunning } from '../lib/decide.mjs';
 
 const baseCfg = JSON.parse(readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
-const cfg = { ...baseCfg };
+const cfg = { ...baseCfg, accounts: undefined };
 const now = new Date('2026-10-20T12:00:00Z');
 const later = new Date('2026-10-20T15:00:00Z');
 

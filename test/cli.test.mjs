@@ -29,6 +29,7 @@ function setup(progress = '') {
   writeFileSync(join(root, 'progress.md'), progress);
   const cfg = {
     ...JSON.parse(readFileSync(join(repo, 'config.example.json'), 'utf8')),
+    accounts: undefined,
     projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
     autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'), retryMinutes: 0.01,
   };
@@ -587,7 +588,7 @@ test('task models end to end: once ×3 with fake-claude.sh → run log, runs.jso
   writeFileSync(join(root, 'progress.md'), '');
   const cfg = {
     ...JSON.parse(readFileSync(join(repo, 'config.example.json'), 'utf8')),
-    projects: undefined, projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
+    projects: undefined, accounts: undefined, projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
     autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'),
   };
   writeFileSync(join(root, 'config.json'), JSON.stringify(cfg));

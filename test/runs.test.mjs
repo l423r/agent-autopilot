@@ -65,6 +65,7 @@ function setup(plan, extra = {}) {
   writeFileSync(join(root, 'progress.md'), '');
   const cfg = {
     ...JSON.parse(readFileSync(join(repo, 'config.example.json'), 'utf8')),
+    accounts: undefined,
     projectDir: root, planPath: 'plan.md', progressPath: 'progress.md',
     autopilotDir: repo, stateDir: join(root, 'state'), logDir: join(root, 'logs'), retryMinutes: 0.01, ...extra,
   };
