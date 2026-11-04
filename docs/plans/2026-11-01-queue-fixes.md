@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Две ошибки, найденные при включении очереди 2026-11-01:
+**Goal:** Ошибки, найденные при включении очереди 2026-11-01 (третья — 2026-11-04, Task 3):
 1. Когда **текущий** план стоит в `waiting-user`, а человек отметил галочки ручной задачи, демон не продолжает сам. Он ждёт `resume`, даже если план после отметки полностью выполнен. Перепроверка раз в 60 с работает только для планов очереди выше текущего.
 2. Заголовок `### Task 1: Пометка \`[planner]\` и виды задач` распознаётся как `[planner]`-задача: пометка внутри обратных кавычек. Если в её шагах есть `restart agent-autopilot`, в лог пишется ложное предупреждение и задача становится `[manual]`.
 
@@ -49,11 +49,20 @@
   `npm test` → FAIL.
 - [ ] **Step 2:** Реализовать: в цикле ожидания при `waiting-user` перечитать текущий план. Если следующая задача уже не `user` или план выполнен — снять `waiting-user` (как `resume`, с записью в лог «Ручная задача отмечена: Task N»). `npm test` → PASS. **Commit** — `fix: continue after a manual task is ticked`
 
-### Task 3: Проверка и ревью · model: opus
+### Task 3: Переключение очередью не наследует `halted` · model: opus
+
+Случай 2026-11-04T11:34:21Z: afan2 дошёл до `[manual]`, очередь переключила демон на `svoydev / 2026-11-01-zhk-polish.md`, и демон сразу встал в `halted: Task 5 не удалась 3 раз подряд` — прежнее состояние этого плана (3 неудачи из-за недельного лимита 2026-11-01) вместе со счётчиком попыток `{"Task 5": 3}`. Задача не запускалась, ожидание длилось до ручного `resume`.
+
+**Files:** Modify `autopilot.mjs` (`switchTo` / `applySwitch`); Test `test/cli.test.mjs`
+
+- [ ] **Step 1:** Сквозной тест на `fake-claude.sh`: план B в очереди, его состояние — `halted` со счётчиком 3 на Task N; план A заканчивается `[manual]` → демон переключается на B и в пределах одного цикла запускает Task N B (попытка 1), `status` — `running`. Отдельно: ручное `switch.json` по-прежнему сбрасывает состояние. `npm test` → FAIL.
+- [ ] **Step 2:** Реализовать: при переключении очередью — так же, как при `switch.json`, сбросить `status` в `idle`, счётчики попыток и `nextAttemptAt` (`paused` пользователя сохранять, как сейчас). `npm test` → PASS. **Commit** — `fix: queue switch resets halted state of the target plan`
+
+### Task 4: Проверка и ревью · model: opus
 
 - [ ] **Step 1:** `npm test` → PASS. Ручной прогон на временном `stateDir`: план с `[manual]`, отметка галочки руками → продолжение без `resume`. Лог — в журнал.
 - [ ] **Step 2:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD с этим планом и Review Focus. Critical и Important — исправить через TDD; Minor — в журнал. **Commit** — `fix: queue fixes review findings`
 
-### Task 4: [manual] Включение
+### Task 5: [manual] Включение
 
 - [ ] **Step 1:** Планировщик: дождаться паузы между задачами, `systemctl restart agent-autopilot`, в логе нет ложного предупреждения про Task 1 плана очереди; проверить `status`.
