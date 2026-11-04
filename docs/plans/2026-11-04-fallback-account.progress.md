@@ -1,0 +1,1 @@
+- 2026-11-04 23:29 Task 1: сделано — lib/accounts.mjs (listAccounts, accountEnv, pickAccount, earliestReset) + 15 тестов; отметка auth — поле state.accountAuth (массив имён); npm test 332/332

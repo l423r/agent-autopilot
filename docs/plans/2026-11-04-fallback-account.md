@@ -39,8 +39,8 @@
 
 **Interfaces:** `listAccounts(cfg) -> [{ name, configDir|null }]` (нет `accounts` → `[{ name: 'основная', configDir: null }]`; пустые/повторные имена — ошибка конфига); `accountEnv(account) -> {}` или `{ CLAUDE_CONFIG_DIR }`; `pickAccount(accounts, state, now) -> { name, switched: 'fallback'|'back'|null }` (первая учётка без действующего лимита и не отмеченная `auth`, иначе `null`); `earliestReset(state) -> Date|null`.
 
-- [ ] **Step 1:** Падающие тесты на все ветки из Global Constraints (одна учётка; лимит основной → запасная; обе в лимите → `null` и ближайший сброс; сброс основной прошёл → `back`; `auth` у запасной). `npm test` → FAIL.
-- [ ] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(accounts): choose Claude account by limits`
+- [x] **Step 1:** Падающие тесты на все ветки из Global Constraints (одна учётка; лимит основной → запасная; обе в лимите → `null` и ближайший сброс; сброс основной прошёл → `back`; `auth` у запасной). `npm test` → FAIL.
+- [x] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(accounts): choose Claude account by limits`
 
 ### Task 2: Демон — лимит переключает учётку · model: opus
 
