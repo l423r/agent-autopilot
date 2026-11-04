@@ -836,6 +836,97 @@ test('queue: the active plan missing from the queue goes to its end, not first',
   assert.equal(readFileSync(join(root, 'plan.md'), 'utf8'), PLAN);
 });
 
+// --- a ticked manual task in the current plan (waiting-user) ---
+
+const tickTask = (root, name, title) => {
+  const file = join(root, name);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(`${title}\n- [ ]`, `${title}\n- [x]`));
+};
+const logOf = root => readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8');
+
+test('waiting-user: a tick of the manual task in the current plan continues it without resume', async () => {
+  const d = await daemon('tick', {
+    config: { queueRecheckSeconds: 0.3 },
+    prepare: root => writeFileSync(join(root, 'plan.md'), QA),
+  });
+  try {
+    await waitFor(() => state(d.root).status === 'waiting-user', 10_000);
+    await new Promise(r => setTimeout(r, 500));
+    tickTask(d.root, 'plan.md', '### Task 2: [manual] a-hand');
+    await waitFor(() => state(d.root).status === 'done', 5000);
+    assert.match(planText(d.root), /### Task 3: a-three\n- \[x\]/);
+    assert.match(logOf(d.root), /Ручная задача отмечена: Task 2/);
+    assert.doesNotMatch(logOf(d.root), /resume/);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('waiting-user: the next task is [manual] too → waiting-user for it, «ждёт вас» once per task, no loop', async () => {
+  const d = await daemon('tick', {
+    config: { queueRecheckSeconds: 0.2 },
+    prepare: root => writeFileSync(join(root, 'plan.md'), QA.replace('### Task 3: a-three', '### Task 3: [manual] a-hand2')),
+  });
+  try {
+    await waitFor(() => state(d.root).status === 'waiting-user', 10_000);
+    await new Promise(r => setTimeout(r, 500));
+    tickTask(d.root, 'plan.md', '### Task 2: [manual] a-hand');
+    await waitFor(() => /a-hand2/.test(state(d.root).reason), 5000);
+    await new Promise(r => setTimeout(r, 1500));
+    const s = state(d.root);
+    assert.equal(s.status, 'waiting-user');
+    assert.match(s.reason, /a-hand2/);
+    assert.equal((logOf(d.root).match(/Ручная задача отмечена/g) ?? []).length, 1, logOf(d.root));
+    const waits = d.replies().filter(r => /ждёт вас/i.test(r.params.title ?? ''));
+    assert.equal(waits.filter(r => /a-hand\b(?!2)/.test(r.body)).length, 1, waits.map(r => r.body).join(' | '));
+    assert.equal(waits.filter(r => /a-hand2/.test(r.body)).length, 1, waits.map(r => r.body).join(' | '));
+  } finally {
+    await d.stop();
+  }
+});
+
+test('waiting-user: the tick finishes the current plan → «План выполнен» and the next plan of the queue, no resume', async () => {
+  const d = await daemon('tick', {
+    fakePlan: '', config: { queueRecheckSeconds: 0.3 },
+    prepare: root => writeFileSync(join(root, 'plan.md'), QA.replace('### Task 2: [manual] a-hand\n- [ ] s\n### Task 3: a-three\n- [ ] s\n', '### Task 2: [manual] a-hand\n- [ ] s\n')),
+  });
+  try {
+    await waitFor(() => state(d.root).status === 'waiting-user', 10_000);
+    await new Promise(r => setTimeout(r, 500));
+    // The queue appears while the daemon already waits (as on 2026-11-01), then the user ticks.
+    writeFileSync(join(d.root, 'b.md'), QB);
+    writeFileSync(join(d.root, 'state', 'queue.json'), JSON.stringify([qItem(d.root, 'plan.md'), qItem(d.root, 'b.md')]));
+    tickTask(d.root, 'plan.md', '### Task 2: [manual] a-hand');
+    await waitFor(() => state(d.root).status === 'done', 10_000);
+    assert.equal(active(d.root).planPath, 'b.md');
+    assert.doesNotMatch(readFileSync(join(d.root, 'b.md'), 'utf8'), /- \[ \]/);
+    assert.match(logOf(d.root), /План выполнен: .*plan\.md/);
+    assert.doesNotMatch(logOf(d.root), /resume/);
+  } finally {
+    await d.stop();
+  }
+});
+
+for (const preState of [
+  { status: 'paused', currentTask: 'Task 1', attempts: {}, nextAttemptAt: null, reason: 'Пауза по команде с телефона' },
+  { status: 'halted', currentTask: 'Task 3', attempts: { 'Task 3': 3 }, nextAttemptAt: null, reason: 'Task 3 не удалась 3 раз подряд' },
+]) {
+  test(`waiting-user only: ${preState.status} with a runnable next task stays put`, async () => {
+    const d = await daemon('tick', {
+      preState, config: { queueRecheckSeconds: 0.2 },
+      prepare: root => writeFileSync(join(root, 'plan.md'), QA.replace(/- \[ \] s\n### Task 2/, '- [x] s\n### Task 2').replace('a-hand\n- [ ]', 'a-hand\n- [x]')),
+    });
+    try {
+      await waitFor(() => d.n.subs.length > 0);
+      await new Promise(r => setTimeout(r, 1500));
+      assert.equal(state(d.root).status, preState.status);
+      assert.match(planText(d.root), /### Task 3: a-three\n- \[ \]/);
+    } finally {
+      await d.stop();
+    }
+  });
+}
+
 test('plan warnings go to the log once', async () => {
   const { root } = setup();
   writeFileSync(join(root, 'plan.md'), PLAN.replace('### Task 2: two\n- [ ] s', '### Task 2: [planner] Выкладка\n- [ ] s: `systemctl restart agent-autopilot`'));

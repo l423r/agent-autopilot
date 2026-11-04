@@ -121,7 +121,8 @@ async function step(cfg) {
 
   if (d.action === 'stop') {
     if (state.status !== d.status || state.reason !== d.reason) {
-      saveState(cfg.stateDir, { ...state, status: d.status, reason: d.reason, updatedAt: now.toISOString() });
+      const waitingTask = d.status === 'waiting-user' ? waitingTaskOf(plan) : undefined;
+      saveState(cfg.stateDir, { ...state, status: d.status, reason: d.reason, ...(waitingTask !== undefined && { waitingTask }), updatedAt: now.toISOString() });
       // A status set by applyResult (auth, paused) was already announced when it was saved.
       if (state.status !== d.status) await send(cfg, { ...stopMessage(d.status, withProgress(cfg, d.reason)), actions: buttonsFor(d.status) });
     }
@@ -373,21 +374,44 @@ async function followQueue(cfg) {
     ? `Ждёт вас: ${pick.waiting.map(w => `${planLabel(cfg, w.target)} — ${w.task.id}: ${w.task.title}`).join('; ')}`
     : 'Все планы очереди выполнены';
   if (state.status === status && state.reason === reason) return;
-  saveState(cfg.stateDir, { ...state, status, reason, updatedAt: new Date().toISOString() });
+  saveState(cfg.stateDir, { ...state, status, reason, ...(status === 'waiting-user' && { waitingTask: currentPlan ? waitingTaskOf(currentPlan) : null }), updatedAt: new Date().toISOString() });
   // «Ждёт вас» went out per task above; «готово» once for the whole queue.
   if (status === 'done' && state.status !== 'done') await send(cfg, { ...stopMessage('done', reason), actions: buttonsFor('done') });
+}
+
+// The `user` task the plan stops on, or null (plan finished or runnable).
+const waitingTaskOf = plan => (!allDone(plan) && nextTask(plan).kind === 'user' ? nextTask(plan).id : null);
+
+// waiting-user: the user may have ticked the manual task of the current plan. If the plan no
+// longer stops on that task, the daemon goes on as after `resume`. state.waitingTask is the task
+// it waits for (null: waits for other plans of the queue; missing: state from an older daemon).
+function recheckWaiting(cfg) {
+  const state = loadState(cfg.stateDir);
+  if (state.status !== 'waiting-user' || state.waitingTask === null) return;
+  let plan;
+  try { plan = readPlan(cfg); } catch { return; }
+  const waiting = waitingTaskOf(plan);
+  if (waiting === state.waitingTask) return;
+  if (state.waitingTask === undefined && waiting) {
+    saveState(cfg.stateDir, { ...state, waitingTask: waiting });
+    return;
+  }
+  const ticked = state.waitingTask ?? plan.tasks.filter(t => t.kind === 'user' && t.done).at(-1)?.id ?? 'план';
+  saveState(cfg.stateDir, { ...resume(state), waitingTask: null, updatedAt: new Date().toISOString() });
+  logEvent(cfg, `Ручная задача отмечена: ${ticked}`);
 }
 
 // Sleeps until `until` (ms timestamp, Infinity = no deadline); with commands on, in steps
 // of at most a second, returning early as soon as a command is queued or the status in
 // state.json changes (e.g. `autopilot.mjs resume` from the shell) or a plan switch is requested.
-// With queue.json it also returns after queueRecheckSeconds (60 s) to look at waiting plans again.
+// With queue.json or in waiting-user it also returns after queueRecheckSeconds (60 s) to look
+// at waiting plans again.
 async function waitUntil(cfg, until) {
   const statusNow = () => { try { return loadState(cfg.stateDir).status; } catch { return null; } };
   const from = statusNow();
-  const queued = existsSync(queueFile(cfg));
-  const deadline = queued ? Math.min(until, Date.now() + recheckMs(cfg)) : until;
-  const ticking = commands.enabled || queued;
+  const recheck = existsSync(queueFile(cfg)) || from === 'waiting-user';
+  const deadline = recheck ? Math.min(until, Date.now() + recheckMs(cfg)) : until;
+  const ticking = commands.enabled || recheck;
   for (;;) {
     if (commands.queue.length) return;
     if (existsSync(join(cfg.stateDir, 'switch.json'))) return;
@@ -419,6 +443,7 @@ async function runLoop(cfg, once) {
   for (;;) {
     await applyPendingSwitch(cfg);
     await drainCommands(cfg);
+    recheckWaiting(cfg);
     await followQueue(cfg);
     const r = await step(cfg);
     if (r === 'stop') {

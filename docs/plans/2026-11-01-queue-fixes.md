@@ -42,12 +42,12 @@
 
 **Files:** Modify `autopilot.mjs`; Test `test/cli.test.mjs`
 
-- [ ] **Step 1:** Сквозные тесты на `fake-claude.sh`:
+- [x] **Step 1:** Сквозные тесты на `fake-claude.sh`:
   - план A: `[manual]` в середине → `waiting-user`; запись галочек в файл A → в пределах 60 с (подменённый таймер) следующая задача A запущена;
   - Review Focus 1, 2 (с очередью из A и B), 3.
 
   `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать: в цикле ожидания при `waiting-user` перечитать текущий план. Если следующая задача уже не `user` или план выполнен — снять `waiting-user` (как `resume`, с записью в лог «Ручная задача отмечена: Task N»). `npm test` → PASS. **Commit** — `fix: continue after a manual task is ticked`
+- [x] **Step 2:** Реализовать: в цикле ожидания при `waiting-user` перечитать текущий план. Если следующая задача уже не `user` или план выполнен — снять `waiting-user` (как `resume`, с записью в лог «Ручная задача отмечена: Task N»). `npm test` → PASS. **Commit** — `fix: continue after a manual task is ticked`
 
 ### Task 3: Переключение очередью не наследует `halted` · model: opus
 
