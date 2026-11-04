@@ -60,8 +60,8 @@
 
 ### Task 4: Проверка и ревью · model: opus
 
-- [ ] **Step 1:** `npm test` → PASS. Ручной прогон на временном `stateDir`: план с `[manual]`, отметка галочки руками → продолжение без `resume`. Лог — в журнал.
-- [ ] **Step 2:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD с этим планом и Review Focus. Critical и Important — исправить через TDD; Minor — в журнал. **Commit** — `fix: queue fixes review findings`
+- [x] **Step 1:** `npm test` → PASS. Ручной прогон на временном `stateDir`: план с `[manual]`, отметка галочки руками → продолжение без `resume`. Лог — в журнал.
+- [x] **Step 2:** По superpowers:requesting-code-review запустить отдельного субагента-ревьюера (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 1 до HEAD с этим планом и Review Focus. Critical и Important — исправить через TDD; Minor — в журнал. **Commit** — `fix: queue fixes review findings`
 
 ### Task 5: [manual] Включение
 
