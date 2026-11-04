@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pidRecord } from '../lib/pidfile.mjs';
-import { requestSwitch } from '../lib/projects.mjs';
+import { requestSwitch, planKey } from '../lib/projects.mjs';
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL('../autopilot.mjs', import.meta.url));
@@ -926,6 +926,51 @@ for (const preState of [
     }
   });
 }
+
+// 2026-11-04T11:34:21Z: the queue moved to a plan that had halted on Task 5 earlier, and the
+// daemon halted at once on its old counter {"Task 5": 3}.
+const haltedCounters = (root, planPath) => JSON.stringify({
+  status: 'idle', currentTask: null, attempts: {}, nextAttemptAt: null, reason: null, updatedAt: null,
+  attemptsByPlan: { [planKey({ projectDir: root, planPath })]: { 'Task 1': 3 } },
+});
+
+test('queue switch: a plan that had halted gets its task run again (attempt 1), not halted', async () => {
+  const d = await daemon('slow', {
+    fakePlan: '', config: { queueRecheckSeconds: 0.3 },
+    prepare: root => {
+      queueSetup({ 'plan.md': QA.replace('a-one\n- [ ]', 'a-one\n- [x]'), 'b.md': QB }, ['plan.md', 'b.md'])(root);
+      writeFileSync(join(root, 'state', 'state.json'), haltedCounters(root, 'b.md'));
+    },
+  });
+  try {
+    await waitFor(() => active(d.root).planPath === 'b.md' && ['running', 'halted'].includes(state(d.root).status), 15_000);
+    const s = state(d.root);
+    assert.equal(s.status, 'running', s.reason);
+    assert.equal(s.currentTask, 'Task 1');
+    assert.equal(s.attempts['Task 1'], 1);
+  } finally {
+    await d.stop();
+  }
+});
+
+test('switch.json: a plan that had halted gets its task run again (attempt 1), not halted', async () => {
+  const d = await daemon('slow', {
+    fakePlan: '',
+    preState: { status: 'done', currentTask: null, attempts: {}, nextAttemptAt: null, reason: 'План выполнен' },
+    prepare: root => writeFileSync(join(root, 'state', 'state.json'), haltedCounters(root, 'plan2.md').replace('"idle"', '"done"')),
+  });
+  try {
+    await waitFor(() => d.n.subs.length > 0);
+    requestSwitch(join(d.root, 'state'), toB(d.root));
+    await waitFor(() => existsSync(join(d.root, 'state', 'active.json')) && ['running', 'halted'].includes(state(d.root).status), 15_000);
+    const s = state(d.root);
+    assert.equal(s.status, 'running', s.reason);
+    assert.equal(s.currentTask, 'Task 1');
+    assert.equal(s.attempts['Task 1'], 1);
+  } finally {
+    await d.stop();
+  }
+});
 
 test('plan warnings go to the log once', async () => {
   const { root } = setup();

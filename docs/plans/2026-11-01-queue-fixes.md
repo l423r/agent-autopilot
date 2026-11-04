@@ -55,8 +55,8 @@
 
 **Files:** Modify `autopilot.mjs` (`switchTo` / `applySwitch`); Test `test/cli.test.mjs`
 
-- [ ] **Step 1:** Сквозной тест на `fake-claude.sh`: план B в очереди, его состояние — `halted` со счётчиком 3 на Task N; план A заканчивается `[manual]` → демон переключается на B и в пределах одного цикла запускает Task N B (попытка 1), `status` — `running`. Отдельно: ручное `switch.json` по-прежнему сбрасывает состояние. `npm test` → FAIL.
-- [ ] **Step 2:** Реализовать: при переключении очередью — так же, как при `switch.json`, сбросить `status` в `idle`, счётчики попыток и `nextAttemptAt` (`paused` пользователя сохранять, как сейчас). `npm test` → PASS. **Commit** — `fix: queue switch resets halted state of the target plan`
+- [x] **Step 1:** Сквозной тест на `fake-claude.sh`: план B в очереди, его состояние — `halted` со счётчиком 3 на Task N; план A заканчивается `[manual]` → демон переключается на B и в пределах одного цикла запускает Task N B (попытка 1), `status` — `running`. Отдельно: ручное `switch.json` по-прежнему сбрасывает состояние. `npm test` → FAIL.
+- [x] **Step 2:** Реализовать: при переключении очередью — так же, как при `switch.json`, сбросить `status` в `idle`, счётчики попыток и `nextAttemptAt` (`paused` пользователя сохранять, как сейчас). `npm test` → PASS. **Commit** — `fix: queue switch resets halted state of the target plan`
 
 ### Task 4: Проверка и ревью · model: opus
 

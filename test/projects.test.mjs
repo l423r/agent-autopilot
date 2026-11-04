@@ -9,6 +9,7 @@ import {
   mentionContext, projectError, projectByDir, queueSwitch,
 } from '../lib/projects.mjs';
 import { loadState, saveState } from '../lib/state.mjs';
+import { initialState } from '../lib/decide.mjs';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'projects');
 const ALPHA = join(FIX, 'alpha');
@@ -202,6 +203,18 @@ test('applySwitch с from хранит попытки по плану: возв�
   assert.deepEqual(loadState(dir).attempts, { 'Task 2': 2 });
   applySwitch(dir, b, a);
   assert.deepEqual(loadState(dir).attempts, { 'Task 1': 1 });
+});
+
+test('applySwitch с maxAttempts: исчерпанный счётчик плана не возвращается, остальные — да', () => {
+  const dir = tempDir('ap-');
+  const a = { projectDir: ALPHA, planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md' };
+  const b = { projectDir: BETA, planPath: 'plans/other.md', progressPath: 'plans/other.progress.md' };
+  saveState(dir, { ...initialState(), attempts: { 'Task 4': 2, 'Task 5': 3 } });
+  applySwitch(dir, b, a, 3);
+  applySwitch(dir, a, b, 3);
+  const s = loadState(dir);
+  assert.equal(s.status, 'idle');
+  assert.deepEqual(s.attempts, { 'Task 4': 2 });
 });
 
 test('queueSwitch ставит план первым, только если очередь есть', () => {

@@ -274,7 +274,7 @@ async function applyPendingSwitch(cfg) {
   // A pause sent after the switch request wins: the plan changes, the autopilot stays paused.
   const keepPaused = loadState(cfg.stateDir).status === 'paused' && commands.lastPauseAt > requestedAt;
   queueSwitch(cfg.stateDir, target);
-  applySwitch(cfg.stateDir, target, currentTarget(cfg));
+  applySwitch(cfg.stateDir, target, currentTarget(cfg), cfg.maxAttempts);
   if (keepPaused) saveState(cfg.stateDir, { ...loadState(cfg.stateDir), status: 'paused', reason: 'Пауза по команде с телефона' });
   Object.assign(cfg, target);
   setPauseAfterTask(cfg, false);
@@ -297,7 +297,7 @@ let lastQueueError = null;
 async function switchTo(cfg, target, why) {
   const t = { projectDir: target.projectDir, planPath: target.planPath, progressPath: target.progressPath ?? progressPathFor(projectByDir(cfg, target.projectDir) ?? {}, target.planPath) };
   const was = basename(cfg.planPath);
-  applySwitch(cfg.stateDir, t, currentTarget(cfg));
+  applySwitch(cfg.stateDir, t, currentTarget(cfg), cfg.maxAttempts);
   Object.assign(cfg, t);
   logEvent(cfg, `Переключено: ${planLabel(cfg, t)} (было: ${was})${why ? ` — ${why}` : ''}`);
   await send(cfg, switchedMessage(planLabel(cfg, t), why));
