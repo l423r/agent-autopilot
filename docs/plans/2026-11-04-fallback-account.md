@@ -60,7 +60,7 @@
 
 **Files:** Create `scripts/setup-alt-account.sh`; Test `test/setup-alt-account.test.mjs`
 
-- [ ] **Step 1:** Тест на временных каталогах (`SRC`/`DST` через переменные окружения): создаёт симлинки по Global Constraints, `.credentials.json` не копирует и не трогает, повторный запуск не ломает и не дублирует, существующий не-симлинк в `DST` не перезаписывает (ошибка с понятным текстом). `npm test` → FAIL → реализация → PASS. **Commit** — `feat: setup script for the spare account config dir`
+- [x] **Step 1:** Тест на временных каталогах (`SRC`/`DST` через переменные окружения): создаёт симлинки по Global Constraints, `.credentials.json` не копирует и не трогает, повторный запуск не ломает и не дублирует, существующий не-симлинк в `DST` не перезаписывает (ошибка с понятным текстом). `npm test` → FAIL → реализация → PASS. **Commit** — `feat: setup script for the spare account config dir`
 
 ### Task 5: Проверка результата · model: sonnet
 
