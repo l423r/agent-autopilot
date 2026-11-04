@@ -46,8 +46,8 @@
 
 **Files:** Modify `lib/decide.mjs`, `lib/runner.mjs`, `lib/state.mjs`, `autopilot.mjs`; Test `test/decide.test.mjs`, `test/cli.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты: `decide` при `limit` с двумя учётками → `idle`, `account` = запасная, `accountLimits` с временем сброса, `attempts` без изменений; с одной учёткой — как сейчас. Сквозные на `fake-claude.sh` (новый режим: печатает сообщение о лимите, если `CLAUDE_CONFIG_DIR` пуст; иначе успех): задача выполняется на запасной в том же цикле; в логе — строка о переключении; после подмены времени (сброс прошёл) следующая задача — на основной; Review Focus 1–3. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация: `runIteration` получает `env` из `accountEnv` выбранной учётки (только для процесса claude); уведомления и строки лога по Global Constraints; `status` — строки «Учётка» и «Лимит». `npm test` → PASS. **Commit** — `feat: fall back to the spare Claude account on limit`
+- [x] **Step 1:** Падающие тесты: `decide` при `limit` с двумя учётками → `idle`, `account` = запасная, `accountLimits` с временем сброса, `attempts` без изменений; с одной учёткой — как сейчас. Сквозные на `fake-claude.sh` (новый режим: печатает сообщение о лимите, если `CLAUDE_CONFIG_DIR` пуст; иначе успех): задача выполняется на запасной в том же цикле; в логе — строка о переключении; после подмены времени (сброс прошёл) следующая задача — на основной; Review Focus 1–3. `npm test` → FAIL.
+- [x] **Step 2:** Реализация: `runIteration` получает `env` из `accountEnv` выбранной учётки (только для процесса claude); уведомления и строки лога по Global Constraints; `status` — строки «Учётка» и «Лимит». `npm test` → PASS. **Commit** — `feat: fall back to the spare Claude account on limit`
 
 ### Task 3: Пульт — чат и лимиты по учёткам · model: sonnet
 

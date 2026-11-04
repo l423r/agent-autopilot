@@ -1061,3 +1061,89 @@ test('status without a queue has no queue blocks', async () => {
   const { stdout } = await exec(root, ['status']);
   assert.doesNotMatch(stdout, /Очередь|Ждёт вас/);
 });
+
+// --- Accounts: a limit on the primary moves the task to the spare (fake-claude.sh, FAKE_MODE=account) ---
+
+const fakeSh = fileURLToPath(new URL('./fixtures/fake-claude.sh', import.meta.url));
+function setupAccounts({ accounts = true, preState } = {}) {
+  const { root, cfg } = setup();
+  const alt = tempDir('ap-alt-');
+  writeFileSync(join(root, 'config.json'), JSON.stringify({
+    ...cfg, projects: undefined, retryMinutes: 15,
+    ...(accounts && { accounts: [{ name: 'основная' }, { name: 'запасная', configDir: alt }] }),
+  }));
+  if (preState) {
+    mkdirSync(join(root, 'state'), { recursive: true });
+    writeFileSync(join(root, 'state', 'state.json'), JSON.stringify(preState));
+  }
+  const accountLog = join(root, 'accounts.log');
+  const execA = (args, mode) => run('node', [cli, ...args], {
+    env: { ...process.env, CLAUDE_CONFIG_DIR: '', AUTOPILOT_CONFIG: join(root, 'config.json'), AUTOPILOT_CLAUDE: fakeSh, FAKE_MODE: mode, FAKE_PLAN: join(root, 'plan.md'), FAKE_ACCOUNT_LOG: accountLog },
+    timeout: 30_000,
+  });
+  const runsOf = () => readFileSync(join(root, 'logs', 'runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const accountRuns = () => readFileSync(accountLog, 'utf8').trim().split('\n');
+  return { root, alt, execA, runsOf, accountRuns, log: () => readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8') };
+}
+
+test('accounts: a limit on the primary → the same task on the spare in the same run, no sleeping, attempt 1', async () => {
+  const a = setupAccounts();
+  await a.execA(['run'], 'account');
+  const s = state(a.root);
+  assert.equal(s.status, 'done');
+  assert.equal(s.account, 'запасная');
+  assert.ok(s.accountLimits['основная']);
+  assert.deepEqual(a.accountRuns(), ['Task 2 -', `Task 2 ${a.alt}`, `Task 3 ${a.alt}`]);
+  assert.deepEqual(a.runsOf().map(r => [r.task, r.result, r.attempt]), [['Task 2', 'limit', 1], ['Task 2', 'ok', 1], ['Task 3', 'ok', 1]]);
+  const log = a.log();
+  assert.match(log, /Лимит «основная» до .+, продолжаю на «запасная»/);
+  assert.equal(log.match(/продолжаю на «запасная»/g).length, 1);
+  assert.doesNotMatch(log, /sleeping/);
+});
+
+test('accounts: the primary reset has passed → the next task runs on the primary, «Вернулся» logged once', async () => {
+  const a = setupAccounts({ preState: { status: 'idle', currentTask: null, attempts: {}, account: 'запасная', accountLimits: { 'основная': new Date(Date.now() - 60_000).toISOString() } } });
+  await a.execA(['once'], 'tick');
+  await a.execA(['once'], 'tick');
+  assert.deepEqual(a.accountRuns(), ['Task 2 -', 'Task 3 -']);
+  assert.equal(state(a.root).account, 'основная');
+  assert.equal(a.log().match(/Вернулся на «основная»/g).length, 1);
+});
+
+test('accounts: a limit on both → one sleeping until the earliest reset, no switch loop', async () => {
+  const a = setupAccounts();
+  await a.execA(['once'], 'limit');
+  assert.equal(state(a.root).status, 'idle');
+  await a.execA(['once'], 'limit');
+  const s = state(a.root);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.nextAttemptAt, [s.accountLimits['основная'], s.accountLimits['запасная']].sort()[0]);
+  const { stdout } = await a.execA(['once'], 'limit');
+  assert.match(stdout, /Следующая попытка/);
+  assert.deepEqual(a.accountRuns(), ['Task 2 -', `Task 2 ${a.alt}`]);
+  assert.equal(s.attempts['Task 2'], undefined);
+  assert.equal(a.log().match(/продолжаю на/g).length, 1);
+});
+
+test('accounts: without accounts a limit sleeps and state.json has no account fields (old state.json reads)', async () => {
+  const a = setupAccounts({ accounts: false, preState: { status: 'idle', currentTask: null, attempts: {}, nextAttemptAt: null, reason: null } });
+  await a.execA(['once'], 'account');
+  const s = state(a.root);
+  assert.equal(s.status, 'sleeping');
+  for (const k of ['account', 'accountLimits', 'accountAuth']) assert.equal(k in s, false);
+  assert.deepEqual(a.accountRuns(), ['Task 2 -']);
+  const { stdout } = await a.execA(['status']);
+  assert.doesNotMatch(stdout, /Учётка/);
+});
+
+test('accounts: status prints the account and its active limits; resume keeps a limit not yet reset', async () => {
+  const until = new Date(Date.now() + 3_600_000).toISOString();
+  const a = setupAccounts({ preState: { status: 'halted', currentTask: 'Task 2', attempts: { 'Task 2': 3 }, account: 'запасная', accountAuth: ['запасная'], accountLimits: { 'основная': until } } });
+  const { stdout } = await a.execA(['status']);
+  assert.match(stdout, /^Учётка: запасная$/m);
+  assert.match(stdout, /^Лимит: основная до .+$/m);
+  await a.execA(['resume']);
+  const s = state(a.root);
+  assert.deepEqual(s.accountLimits, { 'основная': until });
+  assert.equal('accountAuth' in s, false);
+});

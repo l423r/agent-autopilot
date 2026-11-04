@@ -2,7 +2,9 @@
 # Stand-in for `claude` in the task-models check: prints its flags (without the prompt),
 # ticks the boxes of the task named in the prompt in $FAKE_PLAN and prints a JSON result with usage.
 # FAKE_PROMPT_OUT: also saves the prompt there. FAKE_MODE=need-human: instead of ticking, appends
-# a «НУЖЕН ЧЕЛОВЕК» line to $FAKE_PROGRESS.
+# a «НУЖЕН ЧЕЛОВЕК» line to $FAKE_PROGRESS. FAKE_MODE=account: a usage limit message when
+# CLAUDE_CONFIG_DIR is empty (the primary account), otherwise as usual. FAKE_ACCOUNT_LOG: appends
+# «<task> <CLAUDE_CONFIG_DIR or ->» per run.
 prompt=""
 flags=""
 while [ $# -gt 0 ]; do
@@ -11,6 +13,11 @@ done
 task=$(printf '%s' "$prompt" | grep -o 'Task [0-9][0-9]*' | head -n 1)
 echo "task: $task"
 [ -n "$FAKE_PROMPT_OUT" ] && printf '%s' "$prompt" > "$FAKE_PROMPT_OUT"
+[ -n "$FAKE_ACCOUNT_LOG" ] && echo "$task ${CLAUDE_CONFIG_DIR:--}" >> "$FAKE_ACCOUNT_LOG"
+if [ "$FAKE_MODE" = "account" ] && [ -z "$CLAUDE_CONFIG_DIR" ] || [ "$FAKE_MODE" = "limit" ]; then
+  echo '{"type":"result","is_error":true,"result":"Claude usage limit reached ∙ resets 3pm"}'
+  exit 1
+fi
 if [ "$FAKE_MODE" = "need-human" ]; then
   # A [planner] run that cannot finish: a line in the project log, no ticks.
   echo "- 2026-11-01 12:00 $task: НЕ СДЕЛАНО — НУЖЕН ЧЕЛОВЕК: нет доступа к серверу" >> "$FAKE_PROGRESS"

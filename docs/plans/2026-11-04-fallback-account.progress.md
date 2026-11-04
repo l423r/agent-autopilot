@@ -1,1 +1,2 @@
 - 2026-11-04 23:29 Task 1: сделано — lib/accounts.mjs (listAccounts, accountEnv, pickAccount, earliestReset) + 15 тестов; отметка auth — поле state.accountAuth (массив имён); npm test 332/332
+- 2026-11-04 23:37 Task 2: сделано — decide при лимите переключает учётку (idle, без роста попыток; обе в лимите → sleeping до ближайшего сброса; auth на запасной — отметка до resume), возврат на основную перед задачей, CLAUDE_CONFIG_DIR только для claude, уведомления/лог о переключении, status «Учётка/Лимит»; fake-claude.sh FAKE_MODE=account; npm test 350/350
