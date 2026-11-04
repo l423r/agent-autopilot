@@ -750,12 +750,24 @@ async function loadLimits() {
   if (!box.childElementCount) box.append(el('div', 'meta', 'Загружаю…'));
   let data;
   try { data = await api('api/limits'); } catch (err) { data = { error: err.message }; }
-  if (data.error || !data.fiveHour || !data.week) {
+  if (!Array.isArray(data.accounts)) {
     const block = el('div', 'limit');
     block.append(el('div', 'lname', 'Нет данных о лимитах'), el('div', 'meta', data.error || 'Неизвестный ответ сервера'));
     return box.replaceChildren(block);
   }
-  box.replaceChildren(limitBlock('5 часов', data.fiveHour), limitBlock('Неделя', data.week));
+  const several = data.accounts.length > 1;
+  const blocks = [];
+  for (const a of data.accounts) {
+    if (several) blocks.push(el('div', 'meta', `Учётка «${a.name}»${a.active ? ' — активная' : ''}`));
+    if (a.error || !a.fiveHour || !a.week) {
+      const block = el('div', 'limit');
+      block.append(el('div', 'lname', 'Нет данных о лимитах'), el('div', 'meta', a.error || 'Неизвестный ответ сервера'));
+      blocks.push(block);
+    } else {
+      blocks.push(limitBlock('5 часов', a.fiveHour), limitBlock('Неделя', a.week));
+    }
+  }
+  box.replaceChildren(...blocks);
 }
 $('limits-btn').addEventListener('click', () => { $('menu').classList.add('hidden'); showTab('limits'); });
 $('limits-refresh').addEventListener('click', loadLimits);

@@ -24,6 +24,7 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const make = () => createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake });
+const makeWith = accountEnv => createChat({ cfg: { autopilotDir: root }, dir, claudeBin: fake, accountEnv });
 const argv = () => JSON.parse(readFileSync(argvFile, 'utf8'));
 const roles = chat => chat.history().map(e => e.role);
 const session = () => JSON.parse(readFileSync(join(dir, 'session.json'), 'utf8'));
@@ -260,4 +261,20 @@ test('правила: [planner]/[manual] и очередь (planner-prompt и RE
   assert.match(req, /`\[planner\]`/);
   assert.match(req, /`\[manual\]`/);
   assert.match(req, /queue add/);
+});
+
+test('claude runs with the env of the current account, read at each send', async () => {
+  const envFile = join(root, 'env.json');
+  process.env.FAKE_ENV_OUT = envFile;
+  try {
+    let current = { CLAUDE_CONFIG_DIR: '/tmp/alt' };
+    const chat = makeWith(() => current);
+    await sendCollect(chat, 'раз');
+    assert.equal(JSON.parse(readFileSync(envFile, 'utf8')).CLAUDE_CONFIG_DIR, '/tmp/alt');
+    current = { CLAUDE_CONFIG_DIR: undefined };
+    await sendCollect(chat, 'два');
+    assert.equal(JSON.parse(readFileSync(envFile, 'utf8')).CLAUDE_CONFIG_DIR ?? null, null);
+  } finally {
+    delete process.env.FAKE_ENV_OUT;
+  }
 });

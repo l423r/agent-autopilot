@@ -53,8 +53,8 @@
 
 **Files:** Modify `web/server.mjs`, `web/limits.mjs`, чат пульта (модуль, где запускается `claude` для планировщика), `web/index.html`; Test `test/web-limits.test.mjs`, `test/web-chat.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты: `fetchLimits({ credentialsFile })` для каждой учётки (`<configDir>/.credentials.json`, у основной — `/root/.claude/.credentials.json`); `GET /api/limits` → `{ accounts: [{ name, active, fiveHour, week } | { name, error }] }`; чат запускает claude с `CLAUDE_CONFIG_DIR` текущей учётки из `state.json`. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация; в пульте блок лимитов — по строке на учётку, активная помечена. Без `accounts` — как сейчас (одна строка). `npm test` → PASS. **Commit** — `feat(web): per-account limits, planner chat on the active account`
+- [x] **Step 1:** Падающие тесты: `fetchLimits({ credentialsFile })` для каждой учётки (`<configDir>/.credentials.json`, у основной — `/root/.claude/.credentials.json`); `GET /api/limits` → `{ accounts: [{ name, active, fiveHour, week } | { name, error }] }`; чат запускает claude с `CLAUDE_CONFIG_DIR` текущей учётки из `state.json`. `npm test` → FAIL.
+- [x] **Step 2:** Реализация; в пульте блок лимитов — по строке на учётку, активная помечена. Без `accounts` — как сейчас (одна строка). `npm test` → PASS. **Commit** — `feat(web): per-account limits, planner chat on the active account`
 
 ### Task 4: Скрипт каталога запасной учётки · model: sonnet
 

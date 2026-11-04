@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 const mode = process.env.FAKE_STREAM ?? 'ok';
 const argv = process.argv.slice(2);
 if (process.env.FAKE_ARGV) writeFileSync(process.env.FAKE_ARGV, JSON.stringify(argv));
+if (process.env.FAKE_ENV_OUT) writeFileSync(process.env.FAKE_ENV_OUT, JSON.stringify({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null }));
 const emit = obj => console.log(JSON.stringify(obj));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const resumeAt = argv.indexOf('--resume');

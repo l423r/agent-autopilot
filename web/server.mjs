@@ -10,6 +10,7 @@ import { fetchLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
 import { parsePlan, nextTask, allDone } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
+import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
 import { statusText } from '../lib/commands.mjs';
 import { killOrphan } from '../lib/runner.mjs';
 import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, queueSwitch, projectByDir, mentionContext, projectError } from '../lib/projects.mjs';
@@ -27,12 +28,19 @@ const LIMITS_CACHE_MS = 60_000;
 const COMMAND_WORDS = { pause: 'пауза', resume: 'продолжить' };
 const COMMANDS_OFF = 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит';
 
-export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html'), limitsFetch = () => fetchLimits() } = {}) {
+export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html'), limitsFetch = account => fetchLimits(account.credentialsFile ? { credentialsFile: account.credentialsFile } : {}) } = {}) {
   const webDir = join(cfg.stateDir, 'web');
   // A previous server may have died mid-answer: its claude child is an orphan, and busy is not persisted.
   await killOrphan(webDir);
   const uploadsDir = join(webDir, 'uploads');
-  const chat = createChat({ cfg, dir: webDir, ...(claudeBin ? { claudeBin } : {}) });
+  // The planner talks on the account the daemon currently uses; with several accounts the primary has no
+  // CLAUDE_CONFIG_DIR (same rule as the daemon's claude runs).
+  const accountEnv = () => {
+    const accounts = listAccounts(cfg);
+    const current = accounts.find(a => a.name === loadState(cfg.stateDir).account) ?? accounts[0];
+    return { CLAUDE_CONFIG_DIR: undefined, ...accountEnv_(current) };
+  };
+  const chat = createChat({ cfg, dir: webDir, accountEnv, ...(claudeBin ? { claudeBin } : {}) });
   const clients = new Set();
   let pending = ''; // text of the answer in progress, for clients that (re)connect mid-answer
 
@@ -99,9 +107,20 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
 
   // One upstream request per minute at most; concurrent callers share it. Errors are cached too.
   let limits = null; // { at, promise }
+  const accountLimits = async () => {
+    const accounts = listAccounts(cfg);
+    const current = accounts.find(a => a.name === loadState(cfg.stateDir).account) ?? accounts[0];
+    const rows = await Promise.all(accounts.map(async a => {
+      const credentialsFile = a.configDir ? join(a.configDir, '.credentials.json') : undefined;
+      const result = await Promise.resolve().then(() => limitsFetch({ name: a.name, configDir: a.configDir, credentialsFile }))
+        .catch(() => ({ error: 'Не удалось получить лимиты' }));
+      return { name: a.name, active: a === current, ...result };
+    }));
+    return { accounts: rows };
+  };
   const cachedLimits = () => {
     if (!limits || Date.now() - limits.at >= LIMITS_CACHE_MS) {
-      limits = { at: Date.now(), promise: Promise.resolve().then(limitsFetch).catch(() => ({ error: 'Не удалось получить лимиты' })) };
+      limits = { at: Date.now(), promise: accountLimits() };
     }
     return limits.promise;
   };

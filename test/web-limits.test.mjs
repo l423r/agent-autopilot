@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fetchLimits } from '../web/limits.mjs';
 import { startServer } from '../web/server.mjs';
+import { saveState } from '../lib/state.mjs';
 
 const TOKEN = 'sk-ant-oat01-secret-token';
 const USAGE = {
@@ -86,7 +87,10 @@ test('/api/limits: cached for 60 s — two requests, one fetch', async () => {
   const base = `http://127.0.0.1:${srv.port}`;
   const first = await (await fetch(`${base}/api/limits`)).json();
   const second = await (await fetch(`${base}/api/limits`)).json();
-  assert.deepEqual(first.fiveHour, { percent: 11, resetsAt: '2026-10-21T18:20:00Z' });
+  assert.equal(first.accounts.length, 1);
+  assert.equal(first.accounts[0].name, 'основная');
+  assert.equal(first.accounts[0].active, true);
+  assert.deepEqual(first.accounts[0].fiveHour, { percent: 11, resetsAt: '2026-10-21T18:20:00Z' });
   assert.deepEqual(second, first);
   assert.equal(calls.length, 1);
 });
@@ -98,7 +102,41 @@ test('/api/limits: error → 200 { error }, other API still works', async () => 
   const res = await fetch(`${base}/api/limits`);
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(typeof body.error, 'string');
+  assert.equal(typeof body.accounts[0].error, 'string');
   assert.ok(!JSON.stringify(body).includes(TOKEN));
   assert.equal((await fetch(`${base}/api/history`)).status, 200);
+});
+
+test('/api/limits: per account, the active one from state.json is marked; missing credentials of the spare → error row', async () => {
+  const spareDir = join(root, 'alt');
+  const stateDir = join(root, 'state');
+  const cfg = {
+    projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir,
+    accounts: [{ name: 'основная' }, { name: 'запасная', configDir: spareDir }],
+  };
+  saveState(stateDir, { status: 'idle', account: 'запасная' });
+  const files = [];
+  const limitsFetch = account => {
+    files.push(account.credentialsFile);
+    return fetchLimits({ credentialsFile: account.credentialsFile ?? credentialsFile, fetchImpl: fakeFetch(200, USAGE) });
+  };
+  srv = await startServer(cfg, { port: 0, limitsFetch });
+  const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
+  assert.deepEqual(files, [undefined, join(spareDir, '.credentials.json')]);
+  assert.deepEqual(body.accounts.map(a => [a.name, a.active]), [['основная', false], ['запасная', true]]);
+  assert.deepEqual(body.accounts[0].fiveHour, { percent: 11, resetsAt: '2026-10-21T18:20:00Z' });
+  assert.equal(body.accounts[1].fiveHour, undefined);
+  assert.match(body.accounts[1].error, /токен/i);
+  assert.equal(calls.length, 1, 'only the primary reached the network');
+  assert.ok(!JSON.stringify(body).includes(TOKEN));
+});
+
+test('/api/limits: no state.json → the primary is active', async () => {
+  const cfg = {
+    projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir: join(root, 'state'),
+    accounts: [{ name: 'основная' }, { name: 'запасная', configDir: join(root, 'alt') }],
+  };
+  srv = await startServer(cfg, { port: 0, limitsFetch: async () => ({ error: 'x' }) });
+  const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
+  assert.deepEqual(body.accounts.map(a => a.active), [true, false]);
 });

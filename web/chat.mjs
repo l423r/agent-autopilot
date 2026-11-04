@@ -15,7 +15,7 @@ const INTERRUPTED = 'Ответ прерван перезапуском пуль
 
 export function createChat({
   cfg, dir, claudeBin = process.env.AUTOPILOT_CLAUDE ?? 'claude',
-  promptFile = PROMPT_FILE, killGraceMs = KILL_GRACE_MS, kill = process.kill.bind(process),
+  promptFile = PROMPT_FILE, accountEnv = () => ({}), killGraceMs = KILL_GRACE_MS, kill = process.kill.bind(process),
 }) {
   mkdirSync(dir, { recursive: true });
   const historyFile = join(dir, 'history.jsonl');
@@ -116,7 +116,7 @@ export function createChat({
     await new Promise(resolve => {
       child = spawn(claudeBin, args, {
         cwd: '/root',
-        env: process.env,
+        env: { ...process.env, ...accountEnv() }, // the account is read per message: the daemon may have switched
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true, // own process group, so «Стоп» kills everything claude started
       });
