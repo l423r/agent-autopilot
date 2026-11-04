@@ -4,8 +4,17 @@
   "autopilotDir": "/root/agent-autopilot",
   "progressPath": "docs/superpowers/progress.md",
   "projects": [
-    { "name": "autopilot", "projectDir": "/root/agent-autopilot", "plansDir": "docs/plans" },
-    { "name": "sigaret", "projectDir": "/root/sigaret-counter", "plansDir": "docs/superpowers/plans", "progressPath": "docs/superpowers/progress.md" }
+    {
+      "name": "autopilot",
+      "projectDir": "/root/agent-autopilot",
+      "plansDir": "docs/plans"
+    },
+    {
+      "name": "sigaret",
+      "projectDir": "/root/sigaret-counter",
+      "plansDir": "docs/superpowers/plans",
+      "progressPath": "docs/superpowers/progress.md"
+    }
   ],
   "retryMinutes": 15,
   "maxAttempts": 3,
@@ -18,6 +27,19 @@
   "ntfyCommandToken": "",
   "webPort": 7690,
   "webPublicUrl": "",
-  "limitPatterns": ["usage limit", "limit reached", "rate limit", "out of extra usage", "resets? (at )?\\d"],
-  "authPatterns": ["please run /login", "not logged in", "invalid api key", "oauth token (has )?expired", "authentication_error"]
+  "limitPatterns": [
+    "usage limit",
+    "limit reached",
+    "rate limit",
+    "out of extra usage",
+    "resets? (at )?\\d",
+    "hit your .*limit"
+  ],
+  "authPatterns": [
+    "please run /login",
+    "not logged in",
+    "invalid api key",
+    "oauth token (has )?expired",
+    "authentication_error"
+  ]
 }
