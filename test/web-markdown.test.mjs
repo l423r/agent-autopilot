@@ -157,6 +157,12 @@ test('bare url: trailing punctuation stays outside the link', () => {
   assert.ok(out.includes('href="https://example.com/a"'), out);
   assert.ok(out.endsWith('</a>.</p>'), out);
 });
+test('bare url in bold or italic: the closing asterisks stay outside the link', () => {
+  assert.equal(renderMarkdown('**https://youtu.be/abc**'),
+    '<p><strong><a href="https://youtu.be/abc" target="_blank" rel="noopener">https://youtu.be/abc</a></strong></p>');
+  assert.equal(renderMarkdown('*https://b.com/x*'),
+    '<p><em><a href="https://b.com/x" target="_blank" rel="noopener">https://b.com/x</a></em></p>');
+});
 test('bare url does not break [text](url) links or images', () => {
   const md = renderMarkdown('[видео](https://example.com/v) и ![x](' + UP + ')');
   assert.equal((md.match(/<a /g) || []).length, 2, md);

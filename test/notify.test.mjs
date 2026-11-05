@@ -116,6 +116,7 @@ test('linksIn takes up to 3 distinct links from markdown and bare urls, without 
   assert.deepEqual(linksIn(manualText), ['https://youtu.be/abc123', 'https://example.com/list', 'https://example.com/a']);
   assert.deepEqual(linksIn('нет ссылок'), []);
   assert.deepEqual(linksIn(undefined), []);
+  assert.deepEqual(linksIn('**https://youtu.be/abc** и *https://b.com/x*'), ['https://youtu.be/abc', 'https://b.com/x']);
 });
 
 test('waitingMessage lists the task links and keeps the plain line without them', () => {

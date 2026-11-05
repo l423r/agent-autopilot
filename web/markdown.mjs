@@ -26,7 +26,7 @@ function inline(raw) {
   // Bare http(s) URLs: the text is already escaped, so a URL ends at an escaped quote or bracket;
   // closing punctuation after it stays outside the link.
   s = s.replace(/https?:\/\/(?:(?!&quot;|&lt;|&gt;|&#39;)[^\s\u0000])+/g, m => {
-    const url = m.replace(/(?:[.,;:!?)\]]|&amp;)+$/, '');
+    const url = m.replace(/(?:[.,;:!?)\]*]|&amp;)+$/, '');
     if (!/^https?:\/\/[^/]/.test(url)) return m;
     return hold(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`) + m.slice(url.length);
   });
