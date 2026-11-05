@@ -68,7 +68,7 @@
 
 **Files:** Modify `README.md`, инструкция планировщика в `web/` (по Global Constraints)
 
-- [ ] **Step 1:** Добавить правило дословно по Global Constraints и абзац про отметку из пульта (чекбокс, «Есть замечания», автопилот продолжит в течение минуты). `npm test` → PASS. **Commit** — `docs: manual tasks say what, where and how to check`
+- [x] **Step 1:** Добавить правило дословно по Global Constraints и абзац про отметку из пульта (чекбокс, «Есть замечания», автопилот продолжит в течение минуты). `npm test` → PASS. **Commit** — `docs: manual tasks say what, where and how to check`
 
 ### Task 6: Проверка результата · model: sonnet
 
