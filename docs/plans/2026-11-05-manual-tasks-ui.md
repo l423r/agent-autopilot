@@ -47,8 +47,8 @@
 
 **Files:** Modify `web/server.mjs`; Test `test/web-server.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты на временном проекте с git-репозиторием: успех (файл изменён, один коммит только с файлом плана), 404 на неизвестный план, 400/409 по ошибкам `tickStep`, без git — `commit: false` и отметка на месте, два параллельных запроса — одна отметка (Review Focus 1, 2, 4). `npm test` → FAIL.
-- [ ] **Step 2:** Реализация по Global Constraints (атомарная запись, сериализация запросов к одному файлу). `npm test` → PASS. **Commit** — `feat(web): tick manual steps from the panel`
+- [x] **Step 1:** Падающие тесты на временном проекте с git-репозиторием: успех (файл изменён, один коммит только с файлом плана), 404 на неизвестный план, 400/409 по ошибкам `tickStep`, без git — `commit: false` и отметка на месте, два параллельных запроса — одна отметка (Review Focus 1, 2, 4). `npm test` → FAIL.
+- [x] **Step 2:** Реализация по Global Constraints (атомарная запись, сериализация запросов к одному файлу). `npm test` → PASS. **Commit** — `feat(web): tick manual steps from the panel`
 
 ### Task 3: Пульт — «Ждёт вас» и чекбоксы · model: sonnet
 

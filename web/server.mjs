@@ -2,13 +2,15 @@
 // Browser control panel: static page, chat with the planner (answers stream over SSE), plan and status,
 // pause/resume through the ntfy command topic. Listens on 127.0.0.1 only; Caddy adds the password.
 import { createServer } from 'node:http';
-import { readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
-import { parsePlan, nextTask, allDone } from '../lib/plan.mjs';
+import { parsePlan, nextTask, allDone, tickStep } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
 import { statusText } from '../lib/commands.mjs';
@@ -17,6 +19,7 @@ import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, queu
 import { loadQueue, saveQueue, removeAt, moveUp } from '../lib/queue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const run = promisify(execFile);
 const MAX_TEXT = 20_000;
 const MAX_BODY = 256 * 1024;
 const MAX_HISTORY_BYTES = 1024 * 1024 - 1024; // the freshest entries that fit; leaves room for the envelope
@@ -26,6 +29,12 @@ const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'we
 const UPLOAD_ID = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
 const LIMITS_CACHE_MS = 60_000;
 const COMMAND_WORDS = { pause: 'пауза', resume: 'продолжить' };
+const TICK_ERRORS = {
+  'no-task': [404, 'Нет такой задачи'],
+  'not-manual': [400, 'Отмечать можно только шаги ручной задачи'],
+  'no-step': [400, 'Нет такого шага'],
+  already: [409, 'Уже отмечено'],
+};
 const COMMANDS_OFF = 'У автопилота выключены команды (ntfyCommands) — команду никто не выполнит';
 
 export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, indexFile = join(HERE, 'index.html'), limitsFetch = account => fetchLimits(account.credentialsFile ? { credentialsFile: account.credentialsFile } : {}) } = {}) {
@@ -103,6 +112,17 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     if (body.n > items.length) return sendJson(res, 404, { error: 'Нет такой записи' });
     saveQueue(cfg.stateDir, edit(items, body.n - 1));
     sendJson(res, 200, queueView());
+  };
+
+  // Ticks run one after another per plan file: two taps on the same step give one mark and one commit,
+  // and two commits never race for the repository's index.lock.
+  const tickQueues = new Map();
+  const serialized = (key, fn) => {
+    const run = (tickQueues.get(key) ?? Promise.resolve()).then(fn);
+    const tail = run.catch(() => {});
+    tickQueues.set(key, tail);
+    tail.then(() => { if (tickQueues.get(key) === tail) tickQueues.delete(key); });
+    return run;
   };
 
   // One upstream request per minute at most; concurrent callers share it. Errors are cached too.
@@ -229,6 +249,37 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       requestSwitch(cfg.stateDir, target);
       queueSwitch(cfg.stateDir, target); // «Запустить» ставит план первым в очереди, если она есть
       sendJson(res, 200, { ok: true, when: loadState(cfg.stateDir).status === 'running' ? 'after-task' : 'now' });
+    },
+
+    'POST /api/tick': async (req, res) => {
+      const body = await readJson(req);
+      // Only plans listed for a known project: no path from the request reaches the disk.
+      const found = findPlan(effectiveConfig(cfg), body?.project, body?.plan);
+      if (!found) return sendJson(res, 404, { error: 'План не найден' });
+      if (typeof body.task !== 'string') return sendJson(res, 400, { error: 'Нужна задача' });
+      const { projectDir } = found.project;
+      const { planPath } = found.plan;
+      const path = resolve(projectDir, planPath);
+      const [status, result] = await serialized(path, async () => {
+        const ticked = tickStep(readFileSync(path, 'utf8'), body.task, body.step);
+        if (ticked.error) {
+          const [code, error] = TICK_ERRORS[ticked.error];
+          return [code, { error }];
+        }
+        const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+        writeFileSync(tmp, ticked.markdown);
+        renameSync(tmp, path);
+        try {
+          await run('git', ['-C', projectDir, 'commit', '-q', '-m', `docs: ${body.task} отмечена в пульте`, '--', planPath]);
+          return [200, { ok: true, taskDone: ticked.taskDone, commit: true }];
+        } catch (err) {
+          // The mark stays on disk: the daemon reads the file, not git.
+          const error = (err.stderr || err.message).trim();
+          console.error(`Отметка ${body.task} в ${path} не закоммичена: ${error}`);
+          return [200, { ok: true, taskDone: ticked.taskDone, commit: false, error }];
+        }
+      });
+      sendJson(res, status, result);
     },
 
     'POST /api/command': async (req, res) => {

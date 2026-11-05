@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, readdir
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { startServer } from '../web/server.mjs';
@@ -633,4 +633,123 @@ test('POST /api/switch при очереди ставит план первым'
   assert.equal((await post('/api/switch', { project: 'beta', plan: 'plans/other.md' })).status, 200);
   assert.deepEqual(readQueue().map(x => x.planPath), ['plans/other.md', 'plans/2026-02-b.md']);
   assert.equal(JSON.parse(readFileSync(join(cfg.stateDir, 'switch.json'), 'utf8')).planPath, 'plans/other.md');
+});
+
+// A temporary project for /api/tick: plans/p.md with a [manual] task; with git, the plan is committed.
+const TICK_PLAN = [
+  '# План',
+  '',
+  '### Task 1: Код',
+  '',
+  '- [ ] **Step 1:** тесты',
+  '',
+  '### Task 2: [planner] Выкладка',
+  '',
+  '- [ ] **Step 1:** перезапуск',
+  '',
+  '### Task 3: [manual] Посмотреть видео',
+  '',
+  'Видео: https://example.com/v',
+  '',
+  '- [x] **Step 1:** открыть',
+  '- [ ] **Step 2:** посмотреть',
+  '- [ ] **Step 3:** проверить звук',
+  '',
+].join('\r\n');
+const gitIn = (dir, ...args) => {
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout;
+};
+function tickProject({ git = true } = {}) {
+  const dir = join(root, 'gamma');
+  mkdirSync(join(dir, 'plans'), { recursive: true });
+  writeFileSync(join(dir, 'plans', 'p.md'), TICK_PLAN);
+  if (git) {
+    gitIn(dir, 'init', '-q');
+    gitIn(dir, 'config', 'user.name', 'Tester');
+    gitIn(dir, 'config', 'user.email', 'tester@example.com');
+    gitIn(dir, 'config', 'commit.gpgsign', 'false');
+    gitIn(dir, 'add', '.');
+    gitIn(dir, 'commit', '-q', '-m', 'init');
+  }
+  cfg.projects = [{ name: 'gamma', projectDir: dir, plansDir: 'plans' }];
+  return dir;
+}
+const planText = dir => readFileSync(join(dir, 'plans', 'p.md'), 'utf8');
+const commits = dir => gitIn(dir, 'rev-list', '--count', 'HEAD').trim();
+const tick = (task, step, extra = {}) => post('/api/tick', { project: 'gamma', plan: 'plans/p.md', task, step, ...extra });
+
+test('POST /api/tick: шаг отмечен, файл отличается одним символом, коммит только с файлом плана', async () => {
+  const dir = tickProject();
+  writeFileSync(join(dir, 'other.txt'), 'staged');
+  gitIn(dir, 'add', 'other.txt');
+  await start();
+  let r = await tick('Task 3', 2);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await json(r), { ok: true, taskDone: false, commit: true });
+  const after = planText(dir);
+  assert.equal(after, TICK_PLAN.replace('- [ ] **Step 2:**', '- [x] **Step 2:**'));
+  assert.equal(commits(dir), '2');
+  assert.equal(gitIn(dir, 'log', '-1', '--format=%s|%an').trim(), 'docs: Task 3 отмечена в пульте|Tester');
+  assert.equal(gitIn(dir, 'show', '--name-only', '--format=', 'HEAD').trim(), 'plans/p.md');
+  assert.equal(gitIn(dir, 'diff', '--cached', '--name-only').trim(), 'other.txt', 'чужие staged-изменения не попали в коммит');
+
+  r = await tick('Task 3', 3);
+  assert.deepEqual(await json(r), { ok: true, taskDone: true, commit: true });
+  assert.equal(commits(dir), '3');
+});
+
+test('POST /api/tick: 404 на чужой план, 400/409 по ошибкам tickStep, ничего не меняется', async () => {
+  const dir = tickProject();
+  await start();
+  for (const body of [
+    { project: 'gamma', plan: '../../etc/passwd', task: 'Task 3', step: 2 },
+    { project: 'gamma', plan: join(dir, 'plans', 'p.md'), task: 'Task 3', step: 2 },
+    { project: 'nope', plan: 'plans/p.md', task: 'Task 3', step: 2 },
+    { project: 'gamma', plan: 'plans/p.md', task: 'Task 9', step: 1 },
+  ]) assert.equal((await post('/api/tick', body)).status, 404, JSON.stringify(body));
+  for (const [task, step] of [['Task 1', 1], ['Task 2', 1], ['Task 3', 4], ['Task 3', 0], ['Task 3', '2'], [3, 2]]) {
+    const r = await tick(task, step);
+    assert.equal(r.status, 400, `${task} ${step}`);
+    assert.ok((await json(r)).error);
+  }
+  const r = await tick('Task 3', 1);
+  assert.equal(r.status, 409);
+  assert.equal((await json(r)).error, 'Уже отмечено');
+  assert.equal(planText(dir), TICK_PLAN);
+  assert.equal(commits(dir), '1');
+});
+
+test('POST /api/tick без git: commit: false, отметка на месте, сервер жив', async () => {
+  const dir = tickProject({ git: false });
+  await start();
+  const r = await tick('Task 3', 2);
+  assert.equal(r.status, 200);
+  const body = await json(r);
+  assert.equal(body.ok, true);
+  assert.equal(body.commit, false);
+  assert.equal(body.taskDone, false);
+  assert.ok(body.error);
+  assert.match(planText(dir), /- \[x\] \*\*Step 2:\*\*/);
+  assert.equal((await get('/api/projects')).status, 200);
+});
+
+test('POST /api/tick: два параллельных нажатия — одна отметка и один коммит', async () => {
+  const dir = tickProject();
+  await start();
+  const rs = await Promise.all([tick('Task 3', 2), tick('Task 3', 2)]);
+  assert.deepEqual(rs.map(r => r.status).sort(), [200, 409]);
+  assert.equal(planText(dir), TICK_PLAN.replace('- [ ] **Step 2:**', '- [x] **Step 2:**'));
+  assert.equal(commits(dir), '2');
+});
+
+test('POST /api/tick: разные шаги параллельно — оба отмечены, два коммита', async () => {
+  const dir = tickProject();
+  await start();
+  const rs = await Promise.all([tick('Task 3', 2), tick('Task 3', 3)]);
+  assert.deepEqual(rs.map(r => r.status), [200, 200]);
+  assert.deepEqual((await Promise.all(rs.map(json))).map(b => b.commit), [true, true]);
+  assert.equal(planText(dir), TICK_PLAN.replace('- [ ] **Step 2:**', '- [x] **Step 2:**').replace('- [ ] **Step 3:**', '- [x] **Step 3:**'));
+  assert.equal(commits(dir), '3');
 });
