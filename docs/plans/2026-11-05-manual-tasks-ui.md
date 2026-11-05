@@ -40,8 +40,8 @@
 
 **Interfaces:** `tickStep(markdown, taskId, step) -> { markdown, taskDone } | { error: 'not-manual'|'no-task'|'no-step'|'already' }` — чистая функция, нумерация шагов как в `parsePlan`.
 
-- [ ] **Step 1:** Падающие тесты: обычная ручная задача; последний шаг → `taskDone: true`; `[planner]`/обычная → `not-manual`; уже `[x]` → `already`; CRLF сохраняется; вложенные галочки; остальной текст байт в байт. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(plan): tick a manual step`
+- [x] **Step 1:** Падающие тесты: обычная ручная задача; последний шаг → `taskDone: true`; `[planner]`/обычная → `not-manual`; уже `[x]` → `already`; CRLF сохраняется; вложенные галочки; остальной текст байт в байт. `npm test` → FAIL.
+- [x] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(plan): tick a manual step`
 
 ### Task 2: POST /api/tick · model: opus
 
