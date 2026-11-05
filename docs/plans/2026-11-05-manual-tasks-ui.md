@@ -54,9 +54,9 @@
 
 **Files:** Modify `web/index.html`, `web/markdown.mjs`, `web/server.mjs` (`/api/queue` отдаёт полный текст ручной задачи и её шаги с номерами); Test `test/web-markdown.test.mjs`, `test/web-server.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты: автоссылки и XSS (Review Focus 3); `/api/queue` → в `waiting` есть `body` (markdown задачи) и `steps: [{ n, text, done }]`. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация по Global Constraints: «Ждёт вас» раскрыт, шаги с чекбоксами, «Есть замечания» → чат с заготовкой; во вкладке «План» чекбоксы у шагов `[manual]`; после отметки — перерисовка. `npm test` → PASS.
-- [ ] **Step 3:** Скриншоты на временном экземпляре пульта (свой порт и `stateDir`, план с ручной задачей и ссылкой) в ширине 390 px и 1280 px (Chromium headless) — Read: ссылки кликабельны, чекбоксы крупные, текст не обрезан; нажатие чекбокса отмечает шаг. **Commit** — `feat(web): manual tasks with links and checkboxes`
+- [x] **Step 1:** Падающие тесты: автоссылки и XSS (Review Focus 3); `/api/queue` → в `waiting` есть `body` (markdown задачи) и `steps: [{ n, text, done }]`. `npm test` → FAIL.
+- [x] **Step 2:** Реализация по Global Constraints: «Ждёт вас» раскрыт, шаги с чекбоксами, «Есть замечания» → чат с заготовкой; во вкладке «План» чекбоксы у шагов `[manual]`; после отметки — перерисовка. `npm test` → PASS.
+- [x] **Step 3:** Скриншоты на временном экземпляре пульта (свой порт и `stateDir`, план с ручной задачей и ссылкой) в ширине 390 px и 1280 px (Chromium headless) — Read: ссылки кликабельны, чекбоксы крупные, текст не обрезан; нажатие чекбокса отмечает шаг. **Commit** — `feat(web): manual tasks with links and checkboxes`
 
 ### Task 4: Уведомление «Ждёт вас» со ссылками · model: sonnet
 

@@ -158,7 +158,16 @@
   .waiting li { padding: 8px 0; border-top: 1px solid var(--line); }
   .waiting li:first-child { border-top: none; padding-top: 0; }
   .waiting .wplan { font-weight: 600; overflow-wrap: anywhere; }
-  .waiting .wtext { margin-top: 6px; font-size: 14px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .waiting .wtext { margin-top: 6px; font-size: 14px; overflow-wrap: anywhere; }
+  .waiting .wactions { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .waiting .md ul { padding-left: 0; }
+  .waiting .md li, .waiting .md li.task.tick { margin-left: 0; padding: 0; border: 0; background: none; }
+  .md .tick input { margin-left: 0; }
+  .toast { position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 50; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--accent); }
+  .toast.bad { border-color: var(--bad, #e5484d); }
+  .md li.task.tick { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0 6px -20px; }
+  .md li.task.tick input { flex: none; width: 32px; height: 32px; margin: 0; accent-color: var(--accent); }
+  .md li.task.tick > span { flex: 1; min-width: 0; overflow-wrap: anywhere; padding-top: 4px; }
 
   /* Limits */
   .limit { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
@@ -254,6 +263,7 @@
   <button data-tab="status"><span class="ico">⚙️</span>Статус</button>
 </nav>
 
+<div class="toast hidden" id="toast" role="status"></div>
 <script type="module">
 import { renderMarkdown, splitSuggestion } from './markdown.mjs';
 
@@ -297,6 +307,48 @@ function setPill(state) {
   $('pill-text').textContent = names[status] || status;
 }
 
+// Makes the unchecked step boxes of a rendered [manual] task tickable. Boxes are matched to steps by
+// order; if the counts differ (odd markup) the task stays view-only rather than tick a wrong step.
+function enableTicks(container, count, tick) {
+  const items = [...container.querySelectorAll('li.task')];
+  if (items.length !== count) return;
+  items.forEach((li, i) => {
+    const box = li.querySelector('input[type=checkbox]');
+    li.classList.add('tick');
+    const text = el('span');
+    while (box.nextSibling) text.append(box.nextSibling);
+    li.append(text);
+    if (li.classList.contains('done')) return;
+    box.disabled = false;
+    box.setAttribute('aria-label', `Отметить шаг ${i + 1}`);
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try { await tick(i + 1); } catch (err) { box.checked = false; box.disabled = false; tickNote(`✗ Не удалось отметить: ${err.message}`); }
+    });
+  });
+}
+let toastTimer;
+function tickNote(text, bad = true) {
+  const t = $('toast');
+  t.textContent = text;
+  t.className = `toast${bad ? ' bad' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 6000);
+}
+async function tickStep(project, plan, task, step) {
+  const r = await api('api/tick', { project, plan, task, step });
+  await loadQueueView();
+  if (currentTab === 'plan') loadPlan();
+  if (r.taskDone) tickNote('Отмечено, автопилот продолжит в течение минуты', false);
+  return r;
+}
+function remarksDraft(project, task, title) {
+  showTab('chat');
+  input.value = `@${project} ${task} «${title}»: замечания — `;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+}
+
 // «Очередь» (вкладка «План») и «Ждёт вас» (вкладка «Статус») — из одного /api/queue; без очереди оба блока скрыты.
 async function loadQueueView() {
   let q;
@@ -328,7 +380,14 @@ async function loadQueueView() {
   const wl = $('waiting-list');
   wl.replaceChildren(...q.waiting.map(w => {
     const li = el('li');
-    li.append(el('div', 'wplan', `${w.project} / ${fileName(w.plan)} — ${w.waiting.id}: ${w.waiting.title}`), el('div', 'wtext', w.waiting.text));
+    const text = el('div', 'wtext md');
+    text.innerHTML = renderMarkdown(w.waiting.body || '(нет текста)');
+    enableTicks(text, w.waiting.steps.length, n => tickStep(w.project, w.plan, w.waiting.id, n));
+    const remarks = el('button', 'btn ghost', 'Есть замечания');
+    remarks.type = 'button';
+    remarks.addEventListener('click', () => remarksDraft(w.project, w.waiting.id, w.waiting.title));
+    li.append(el('div', 'wplan', `${w.project} / ${fileName(w.plan)} — ${w.waiting.id}: ${w.waiting.title}`), text, el('div', 'wactions', null));
+    li.lastChild.append(remarks);
     return li;
   }));
   $('waiting').classList.toggle('hidden', !q.waiting.length);
@@ -791,7 +850,7 @@ function taskBodies(markdown) {
 }
 
 // Fills `list` with the plan's tasks; tasks whose ids are in `open` start expanded.
-function renderTasks(list, p, open) {
+function renderTasks(list, p, open, ctx) {
   const bodies = taskBodies(p.markdown);
   list.replaceChildren();
   let phase;
@@ -808,7 +867,10 @@ function renderTasks(list, p, open) {
     const body = el('div', 'body md hidden');
     head.addEventListener('click', () => {
       const opening = body.classList.contains('hidden');
-      if (opening && !body.childElementCount) body.innerHTML = renderMarkdown(bodies.get(t.id) || '(нет текста)');
+      if (opening && !body.childElementCount) {
+        body.innerHTML = renderMarkdown(bodies.get(t.id) || '(нет текста)');
+        if (t.manual && ctx) enableTicks(body, t.boxes, n => tickStep(ctx.project, ctx.plan, t.id, n));
+      }
       body.classList.toggle('hidden', !opening);
       li.classList.toggle('open', opening);
     });
@@ -860,7 +922,7 @@ function planBlock(project, info, isCurrent) {
     tasks.append(el('li', 'meta', 'Загружаю…'));
     try {
       const q = `project=${encodeURIComponent(project.name)}&plan=${encodeURIComponent(info.planPath)}`;
-      renderTasks(tasks, await api(`api/plan?${q}`), openTasks.get(key) ?? new Set());
+      renderTasks(tasks, await api(`api/plan?${q}`), openTasks.get(key) ?? new Set(), { project: project.name, plan: info.planPath });
     } catch (err) {
       tasks.replaceChildren(el('li', 'note bad', err.message));
     }

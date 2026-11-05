@@ -147,3 +147,26 @@ test('image caption carries no markup', () => {
   assert.ok(out.includes('alt="a &lt;b&gt;"'), out);
   assert.ok(!out.includes('\u0000'), JSON.stringify(out));
 });
+
+test('bare http(s) urls become links', () => {
+  assert.equal(renderMarkdown('Смотрите https://youtu.be/abc?t=1&x=2 сегодня'),
+    '<p>Смотрите <a href="https://youtu.be/abc?t=1&amp;x=2" target="_blank" rel="noopener">https://youtu.be/abc?t=1&amp;x=2</a> сегодня</p>');
+});
+test('bare url: trailing punctuation stays outside the link', () => {
+  const out = renderMarkdown('См. https://example.com/a.');
+  assert.ok(out.includes('href="https://example.com/a"'), out);
+  assert.ok(out.endsWith('</a>.</p>'), out);
+});
+test('bare url does not break [text](url) links or images', () => {
+  const md = renderMarkdown('[видео](https://example.com/v) и ![x](' + UP + ')');
+  assert.equal((md.match(/<a /g) || []).length, 2, md);
+  assert.ok(md.includes('>видео</a>'), md);
+  assert.equal(renderMarkdown('`https://example.com`'), '<p><code>https://example.com</code></p>');
+});
+test('XSS: bare urls with quotes, angle brackets and javascript: scheme', () => {
+  const out = renderMarkdown('https://e.com/"onmouseover="x <script>alert(1)</script> javascript:alert(1)');
+  assert.ok(!out.includes('<script'), out);
+  assert.ok(!/href="javascript/i.test(out), out);
+  assert.ok(!/href="[^"]*"[^>]*onmouseover/.test(out), out);
+  assert.match(out, /<a href="https:\/\/e\.com\/" target="_blank" rel="noopener">/);
+});

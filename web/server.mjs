@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
-import { parsePlan, nextTask, allDone, tickStep } from '../lib/plan.mjs';
+import { parsePlan, nextTask, allDone, tickStep, taskSteps } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
 import { statusText } from '../lib/commands.mjs';
@@ -94,7 +94,10 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
         const plan = parsePlan(markdown);
         const next = allDone(plan) ? null : nextTask(plan);
         Object.assign(row, { done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length });
-        if (next?.kind === 'user') row.waiting = { id: next.id, title: next.title, text: taskBodies(markdown).get(next.id) ?? '' };
+        if (next?.kind === 'user') {
+          const body = taskBodies(markdown).get(next.id) ?? '';
+          row.waiting = { id: next.id, title: next.title, text: body, body, steps: taskSteps(markdown, next.id) };
+        }
       } catch (err) {
         row.error = err.code === 'ENOENT' ? 'нет файла плана' : err.message;
       }

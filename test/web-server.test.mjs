@@ -585,6 +585,8 @@ test('GET /api/queue: очередь с прогрессом, «ждёт вас�
   assert.equal(q.items[1].waiting.id, 'Task 1');
   assert.equal(q.items[1].waiting.title, 'Купить домен');
   assert.match(q.items[1].waiting.text, /Купите домен у регистратора/);
+  assert.match(q.items[1].waiting.body, /Купите домен у регистратора/);
+  assert.deepEqual(q.items[1].waiting.steps, [{ n: 1, text: '**Step 1:** Купите домен у регистратора', done: false }]);
   assert.ok(q.items[2].error);
   assert.deepEqual(q.waiting.map(w => w.n), [2]);
 });

@@ -23,6 +23,13 @@ function inline(raw) {
   // Only http(s) and uploads links; the text part excludes '[' so scanning stays linear.
   s = s.replace(new RegExp(`\\[([^\\[\\]\\n]*)\\]\\((https?:\\/\\/[^\\s()]+|${UPLOAD})\\)`, 'g'),
     (_, t, url) => hold(`<a href="${url}" target="_blank" rel="noopener">${release(t)}</a>`));
+  // Bare http(s) URLs: the text is already escaped, so a URL ends at an escaped quote or bracket;
+  // closing punctuation after it stays outside the link.
+  s = s.replace(/https?:\/\/(?:(?!&quot;|&lt;|&gt;|&#39;)[^\s\u0000])+/g, m => {
+    const url = m.replace(/(?:[.,;:!?)\]]|&amp;)+$/, '');
+    if (!/^https?:\/\/[^/]/.test(url)) return m;
+    return hold(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`) + m.slice(url.length);
+  });
   s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   return release(s);
