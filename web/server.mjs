@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
-import { parsePlan, nextTask, allDone, tickStep, taskSteps } from '../lib/plan.mjs';
+import { parsePlan, nextTask, allDone, tickStep, taskSteps, taskBodies } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
 import { statusText } from '../lib/commands.mjs';
@@ -358,23 +358,6 @@ function freshest(entries, limit) {
     i--;
   }
   return entries.slice(i);
-}
-
-// Each task's own text: from its heading up to the next task or phase heading (same cut as the panel).
-const TASK_HEAD = /^#{2,4}\s+Task\s+(\d+)\b/;
-function taskBodies(markdown) {
-  const bodies = new Map();
-  let id = null;
-  let lines = [];
-  const flush = () => { if (id) bodies.set(id, lines.join('\n').trim()); };
-  for (const line of markdown.split(/\r?\n/)) {
-    const m = line.match(TASK_HEAD);
-    if (m) { flush(); id = `Task ${m[1]}`; lines = []; continue; }
-    if (/^#{1,2}\s/.test(line) || /^---\s*$/.test(line)) { flush(); id = null; lines = []; continue; }
-    if (id) lines.push(line);
-  }
-  flush();
-  return bodies;
 }
 
 const sseFrame = ({ type, ...data }) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;

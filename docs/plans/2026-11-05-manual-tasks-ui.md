@@ -62,7 +62,7 @@
 
 **Files:** Modify `lib/notify.mjs`, `autopilot.mjs`; Test `test/notify.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты: в сообщении «Ждёт вас» — до 3 ссылок из текста задачи; кнопка «Открыть в пульте» при `webPublicUrl`; всего кнопок ≤ 3. `npm test` → FAIL → реализация → PASS. **Commit** — `feat(notify): links and panel button for manual tasks`
+- [x] **Step 1:** Падающие тесты: в сообщении «Ждёт вас» — до 3 ссылок из текста задачи; кнопка «Открыть в пульте» при `webPublicUrl`; всего кнопок ≤ 3. `npm test` → FAIL → реализация → PASS. **Commit** — `feat(notify): links and panel button for manual tasks`
 
 ### Task 5: Правило для планов · model: haiku
 

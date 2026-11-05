@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { notify, stopMessage, buttonsFor } from '../lib/notify.mjs';
+import { notify, stopMessage, buttonsFor, waitingMessage, linksIn } from '../lib/notify.mjs';
 import { parseCommand } from '../lib/commands.mjs';
 
 // A local stand-in for ntfy that records every POST.
@@ -104,4 +104,47 @@ test('notify adds click=<webPublicUrl> so a tap opens the panel, and nothing wit
   assert.equal(n.got[0].params.click, 'https://h.example/pult/');
   assert.equal(n.got[1].params.click, undefined);
   assert.equal(n.got[2].params.click, undefined);
+});
+
+const manualText = [
+  'Посмотрите видео https://youtu.be/abc123, затем [чек-лист](https://example.com/list).',
+  '- [ ] Открыть https://example.com/a и https://example.com/b.',
+  'Повтор https://youtu.be/abc123 и ещё https://example.com/extra',
+].join('\n');
+
+test('linksIn takes up to 3 distinct links from markdown and bare urls, without trailing punctuation', () => {
+  assert.deepEqual(linksIn(manualText), ['https://youtu.be/abc123', 'https://example.com/list', 'https://example.com/a']);
+  assert.deepEqual(linksIn('нет ссылок'), []);
+  assert.deepEqual(linksIn(undefined), []);
+});
+
+test('waitingMessage lists the task links and keeps the plain line without them', () => {
+  const task = { id: 'Task 9', title: 'Проверка' };
+  const plain = waitingMessage('proj', task);
+  assert.equal(plain.message, 'proj — Task 9: Проверка');
+  const m = waitingMessage('proj', task, { text: manualText });
+  assert.equal(m.message, 'proj — Task 9: Проверка\nhttps://youtu.be/abc123\nhttps://example.com/list\nhttps://example.com/a');
+});
+
+test('waitingMessage adds an «Открыть в пульте» view button with webPublicUrl, at most 3 buttons', () => {
+  const task = { id: 'Task 9', title: 'Проверка' };
+  assert.ok(!waitingMessage('p', task, { text: '' }).actions.some(a => a.url));
+  const m = waitingMessage('p', task, { webUrl: 'https://h.example/pult/' });
+  assert.deepEqual(m.actions.find(a => a.url), { label: 'Открыть в пульте', url: 'https://h.example/pult/' });
+  assert.ok(m.actions.length <= 3);
+  assert.ok(m.actions.some(a => a.command === 'resume'));
+});
+
+test('notify renders a view action, works without command token, and caps buttons at 3 keeping the view', async () => {
+  const n = await fakeNtfy();
+  const view = { label: 'Открыть в пульте', url: 'https://h.example/pult/' };
+  await notify({ ntfyServer: n.url, ntfyTopic: 'tp' }, { title: 't', message: 'm', actions: [{ label: 'Статус', command: 'status' }, view] });
+  await notify(cmdCfg(n.url), { title: 't', message: 'm', actions: [
+    { label: 'A', command: 'resume' }, { label: 'B', command: 'status' }, { label: 'C', command: 'pause' }, view] });
+  n.close();
+  assert.equal(n.got[0].params.actions, 'view, Открыть в пульте, https://h.example/pult/');
+  const parts = n.got[1].params.actions.split('; ');
+  assert.equal(parts.length, 3);
+  assert.ok(parts.includes('view, Открыть в пульте, https://h.example/pult/'));
+  assert.ok(parts[0].startsWith('http, A,'));
 });

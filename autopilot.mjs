@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsS
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { parsePlan, nextTask, allDone } from './lib/plan.mjs';
+import { parsePlan, nextTask, allDone, taskBodies } from './lib/plan.mjs';
 import { classify, usageOf } from './lib/classify.mjs';
 import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
@@ -317,6 +317,10 @@ async function applyPendingSwitch(cfg) {
 
 const currentTarget = cfg => ({ projectDir: cfg.projectDir, planPath: cfg.planPath, progressPath: cfg.progressPath });
 const sameTarget = samePlan;
+// The manual task's own text (for the links in «Ждёт вас»); a plan that cannot be read gives none.
+const manualTextOf = (t, task) => {
+  try { return taskBodies(readFileSync(resolve(t.projectDir, t.planPath), 'utf8')).get(task.id) ?? ''; } catch { return ''; }
+};
 const readTarget = t => parsePlan(readFileSync(resolve(t.projectDir, t.planPath), 'utf8'));
 const planLabel = (cfg, t) => `${projectByDir(cfg, t.projectDir)?.name ?? basename(t.projectDir)} / ${basename(t.planPath)}`;
 const queueFile = cfg => join(cfg.stateDir, 'queue.json');
@@ -382,7 +386,7 @@ async function followQueue(cfg) {
   }
   for (const { target: t, task } of fresh) {
     logEvent(cfg, `Ждёт вас: ${planLabel(cfg, t)} — ${task.id}: ${task.title}`);
-    await send(cfg, waitingMessage(planLabel(cfg, t), task));
+    await send(cfg, waitingMessage(planLabel(cfg, t), task, { text: manualTextOf(t, task), webUrl: cfg.webPublicUrl }));
   }
 
   const currentRunnable = Boolean(currentPlan) && !allDone(currentPlan) && nextTask(currentPlan).kind !== 'user';
