@@ -335,3 +335,8 @@ README.md
 - Решение: runner убирает у codex-процесса CLAUDE_CONFIG_DIR, у claude-процесса — CODEX_HOME, даже если они есть у демона. В fake-claude.mjs добавлен режим `env`.
 - RED: 11 падений (нет `codexModelFor`, нет ветки codex). GREEN: `npm test` → 423/423.
 - 2026-11-06 12:39 Task 3: сделано — runner запускает `codex exec --json -C <проект> --dangerously-bypass-approvals-and-sandbox [-m/-c effort из codexModels] -- <промпт>` с CODEX_HOME только у codex, classify/usageOf разбирают JSONL Codex (ok/limit с rate_limits или «try again at»/auth/error с хвостом), фикстуры + fake-codex.sh; npm test 423/423
+
+### Заметки Task 4
+- RED: `test/cli.test.mjs` → Cannot find module `lib/prompt.mjs`. GREEN: `npm test` → 424/424.
+- Решение: `promptTemplate(task, executor)` вынесена из `autopilot.mjs` в `lib/prompt.mjs` (autopilot.mjs исполняет CLI при импорте, тестировать там нельзя); `autopilot.mjs` импортирует её, вызов `promptTemplate(d.task)` пока без executor (Claude) — **Task 5** должен передать вид исполнителя.
+- 2026-11-06 12:50 Task 4: сделано — prompt-codex.md (TDD, проверки, ревью свежим ревьюером, отметки/журнал/коммит, без push, без навыков), promptTemplate(task, executor) в lib/prompt.mjs; npm test 424/424

@@ -9,6 +9,7 @@ import { classify, usageOf } from './lib/classify.mjs';
 import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
+import { promptTemplate } from './lib/prompt.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
@@ -50,12 +51,6 @@ function loadConfig() {
 
 const readPlan = cfg => parsePlan(readFileSync(resolve(cfg.projectDir, cfg.planPath), 'utf8'));
 const readProgress = cfg => { try { return readFileSync(resolve(cfg.projectDir, cfg.progressPath), 'utf8'); } catch { return ''; } };
-
-// [planner] tasks run with the planner's chat role plus the rules for running a task alone.
-function promptTemplate(task) {
-  if (task.kind !== 'planner') return readFileSync(join(HERE, 'prompt.md'), 'utf8');
-  return readFileSync(join(HERE, 'web', 'planner-prompt.md'), 'utf8') + readFileSync(join(HERE, 'planner-task-prompt.md'), 'utf8');
-}
 
 // «НУЖЕН ЧЕЛОВЕК: …» written to the project log by this run (lines added after `before`).
 function needHumanNote(before, after, task) {

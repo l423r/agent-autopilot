@@ -61,7 +61,7 @@
 
 **Files:** Create `prompt-codex.md`; Modify `autopilot.mjs` (`promptTemplate` по виду исполнителя); Test `test/cli.test.mjs`
 
-- [ ] **Step 1:** `prompt-codex.md` по Global Constraints и Review Focus 3: порядок шагов как в `prompt.md`; TDD явными словами (сначала падающий тест, запуск, потом код, запуск); «каждую проверку из плана запусти и сверь вывод»; шаг ревью — свежий ревьюер в этой же сессии (сначала только чтение diff и плана, замечания по пунктам Review Focus в журнал, потом исправления). Тест: обычная задача на Codex получает `prompt-codex.md`, `[planner]` — прежний промпт планировщика. `npm test` → PASS. **Commit** — `feat: codex prompt`
+- [x] **Step 1:** `prompt-codex.md` по Global Constraints и Review Focus 3: порядок шагов как в `prompt.md`; TDD явными словами (сначала падающий тест, запуск, потом код, запуск); «каждую проверку из плана запусти и сверь вывод»; шаг ревью — свежий ревьюер в этой же сессии (сначала только чтение diff и плана, замечания по пунктам Review Focus в журнал, потом исправления). Тест: обычная задача на Codex получает `prompt-codex.md`, `[planner]` — прежний промпт планировщика. `npm test` → PASS. **Commit** — `feat: codex prompt`
 
 ### Task 5: Демон — исполнитель на задачу · model: opus
 

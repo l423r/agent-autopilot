@@ -1160,3 +1160,21 @@ test('accounts: status prints the account and its active limits; resume keeps a 
   assert.deepEqual(s.accountLimits, { 'основная': until });
   assert.equal('accountAuth' in s, false);
 });
+
+test('promptTemplate: ordinary task on codex gets prompt-codex.md, planner and claude keep theirs', async () => {
+  const { promptTemplate } = await import('../lib/prompt.mjs');
+  const ordinary = { id: 'Task 2', title: 'two' };
+  const codex = promptTemplate(ordinary, 'codex');
+  assert.match(codex, /Выполни ТОЛЬКО `\{\{taskId\}\}: \{\{taskTitle\}\}`/);
+  assert.match(codex, /сначала напиши тест, запусти его и убедись, что он падает/);
+  assert.match(codex, /свежий ревьюер/);
+  assert.doesNotMatch(codex, /superpowers|субагент|Skill|ToolSearch/);
+  assert.match(codex, /- \[x\]/);
+  assert.match(codex, /НЕ СДЕЛАНО/);
+  assert.match(codex, /не пушь/);
+  assert.equal(promptTemplate(ordinary, 'claude'), readFileSync(join(repo, 'prompt.md'), 'utf8'));
+  assert.equal(promptTemplate(ordinary), readFileSync(join(repo, 'prompt.md'), 'utf8'));
+  const planner = promptTemplate({ id: 'Task 1', title: 'p', kind: 'planner' }, 'codex');
+  assert.match(planner, /Ты — планировщик проектов на этом сервере/);
+  assert.doesNotMatch(planner, /сначала напиши тест/);
+});
