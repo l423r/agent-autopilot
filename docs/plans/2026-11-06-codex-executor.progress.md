@@ -447,3 +447,4 @@ claude/по умолчанию | 1 | 1 | 0 с | $0.42 | 20
 - Task 11: config.json (вне git): executor=codex, accounts+{codex, codexHome /root/.codex}, codexModels haiku→gpt-6-luna/low, sonnet→gpt-6.1-sol/medium, opus→gpt-6.1-sol/high (все три проверены реальным запуском). agent-autopilot-web перезапущен; `status`: «Исполнитель: codex (5 ч: 1 %, неделя: 0 %)». npm test 448/448.
 - НУЖЕН ПЕРЕЗАПУСК agent-autopilot (Task 12: его делает планировщик, когда status — не running)
 - 2026-11-06 15:05 Task 11: сделано — фикстуры сверены с реальным выводом codex, config.json включён (executor codex, учётка, codexModels), web перезапущен, демон ждёт перезапуска в Task 12
+- 2026-11-06 15:03 CET Task 12: сделано планировщиком — systemctl restart agent-autopilot в waiting-user; status: «Исполнитель: codex (5 ч: 1 %, неделя: 0 %)», /api/limits отдаёт строки «основная» и «codex» (executor). Обычных задач в очереди нет — первый реальный запуск на Codex будет со следующим планом.
