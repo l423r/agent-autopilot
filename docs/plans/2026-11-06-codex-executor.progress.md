@@ -319,3 +319,10 @@ README.md
 - Список моделей для Plus в `codex --help` и README пакета отсутствует (в пакете только package.json). Предложение для `codexModels` — сверить в Task 10/11 после входа; черновик: haiku → {model: "<быстрая>", effort: "low"}, sonnet → {"<основная>", "medium"}, opus → {"<основная>", "high"}. Идентификаторы не выдумываю.
 - Формат JSONL для фикстур Task 3: по документации, «сверить в Task 11».
 - 2026-11-06 12:27 Task 1: сделано — Codex CLI 0.167.0 установлен, флаги и вывод help записаны в журнал (вход не выполнялся; идентификаторы моделей сверить после входа)
+
+### Заметки Task 2
+- RED: `node --test test/accounts.test.mjs` → SyntaxError: нет экспорта `pickExecutor`; docs.test — deepEqual без `kind`/`codexHome`. GREEN: `npm test` → 405/405.
+- Решение: `listAccounts` по интерфейсу плана теперь отдаёт `kind` и `codexHome`, поэтому ожидания в `test/accounts.test.mjs` и `test/docs.test.mjs` дополнены этими полями (поведение прежнее; эквивалентность `pickExecutor` без `executor` и `pickAccount` проверена тестом). Неизвестный `kind` — ошибка конфига.
+- Решение: `switched` считается внутри кандидатов; `state.account` вне их (planner-задача после codex) = первый кандидат, т.е. без ложного переключения. Для Task 5: если planner-прогон на Claude перезапишет `state.account`, следующая обычная задача на Codex даст `switched: 'back'` — демону стоит не считать это возвратом из лимита (или не перезаписывать `account` planner-прогоном).
+- Для Task 5: «без роста счётчика попыток» и «один sleeping до ближайшего сброса» — в `lib/decide.mjs` (`moveAccount`/`applyResult`), в Task 2 покрыт только выбор (`pickExecutor` → null, `earliestReset` — ближайший сброс среди всех, включая codex). `decide.mjs` пока вызывает `pickAccount` и не знает о codex.
+- 2026-11-06 12:32 Task 2: сделано — listAccounts с kind/codexHome, accountEnv с CODEX_HOME, pickExecutor (planner → только Claude, обычная → Codex, затем Claude по приоритету, всё в лимите → null); npm test 405/405

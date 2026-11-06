@@ -8,8 +8,8 @@ const read = name => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'
 test('config.example.json accounts parse with the real loader', () => {
   const cfg = JSON.parse(read('config.example.json'));
   assert.deepEqual(listAccounts(cfg), [
-    { name: 'основная', configDir: null },
-    { name: 'запасная', configDir: '/root/.claude-alt' },
+    { name: 'основная', kind: 'claude', configDir: null, codexHome: null },
+    { name: 'запасная', kind: 'claude', configDir: '/root/.claude-alt', codexHome: null },
   ]);
 });
 

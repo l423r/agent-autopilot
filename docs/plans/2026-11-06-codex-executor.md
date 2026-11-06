@@ -47,8 +47,8 @@
 
 **Interfaces:** `listAccounts(cfg)` → `[{ name, kind, configDir|null, codexHome|null }]`; `pickExecutor(accounts, state, task, cfg, now) -> { name, kind, switched } | null` (правила — Review Focus 1); `accountEnv(account)` → `{ CLAUDE_CONFIG_DIR }` / `{ CODEX_HOME }` / `{}`.
 
-- [ ] **Step 1:** Падающие тесты на все ветки Review Focus 1 и 4. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(accounts): codex executor kind and task-aware choice`
+- [x] **Step 1:** Падающие тесты на все ветки Review Focus 1 и 4. `npm test` → FAIL.
+- [x] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(accounts): codex executor kind and task-aware choice`
 
 ### Task 3: Запуск и разбор вывода Codex · model: opus
 
