@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parsePlan, nextTask, allDone, taskBodies } from './lib/plan.mjs';
 import { classify, usageOf } from './lib/classify.mjs';
-import { decide, applyResult, resume, markRunning, STOPPED } from './lib/decide.mjs';
+import { decide, applyResult, resume, markRunning, preRun, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
 import { loadState, saveState } from './lib/state.mjs';
 import { promptTemplate } from './lib/prompt.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
-import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage } from './lib/notify.mjs';
+import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage, codexLimitMessage, codexAuthMessage, codexBackMessage } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, validateModelConfig } from './lib/models.mjs';
@@ -82,9 +82,9 @@ async function send(cfg, msg) {
 
 const shortTime = iso => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-// Env of the claude process for the chosen account. With several accounts the primary runs without
+// Env of the claude or codex process for the chosen account. With several accounts the primary runs without
 // CLAUDE_CONFIG_DIR even if the daemon has one; nothing else (git push) gets the account env.
-function claudeEnv(cfg, name) {
+function accountProcessEnv(cfg, name) {
   if (!name) return {};
   return { CLAUDE_CONFIG_DIR: undefined, ...accountEnv(listAccounts(cfg).find(a => a.name === name)) };
 }
@@ -147,26 +147,37 @@ async function step(cfg) {
     return { sleepUntil: d.until };
   }
 
-  const pre = d.account ? { ...state, account: d.account } : state;
-  if (d.switched === 'back') await announceAccount(cfg, 'Автопилот: основная учётка', `Вернулся на «${d.account}»`);
+  const pre = preRun(state, d, cfg);
+  // With cfg.executor 'codex' the log line, runs.jsonl and the switch messages name the executor.
+  const executor = cfg.executor === 'codex' && d.kind ? d.kind : null;
+  const kind = d.kind ?? 'claude';
+  if (d.switched === 'back') {
+    if (executor && kind === 'codex') {
+      logEvent(cfg, codexBackMessage().message);
+      await send(cfg, codexBackMessage());
+    } else await announceAccount(cfg, 'Автопилот: основная учётка', `Вернулся на «${d.account}»`);
+  }
   // Computed before markRunning counts this run; a run lost to a restart was already counted.
   const attempt = (state.attempts[d.task.id] ?? 0) + 1;
   const model = modelFor(d.task, attempt, cfg);
-  logEvent(cfg, `run ${d.task.id}${model ? ` (${model}, попытка ${attempt})` : ''}: ${d.task.title}`);
+  const label = executor ? [executor, model].filter(Boolean).join('/') : model;
+  logEvent(cfg, `run ${d.task.id}${label ? ` (${label}, попытка ${attempt})` : ''}: ${d.task.title}`);
   saveState(cfg.stateDir, markRunning(pre, d.task, now, model));
   commands.busy = true;
-  const template = promptTemplate(d.task);
+  const template = promptTemplate(d.task, kind);
   const progressBefore = readProgress(cfg);
   const raw = await runIteration({
     task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
+    executor: kind,
     claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
+    codexBin: process.env.AUTOPILOT_CODEX ?? 'codex',
     timeoutMs: cfg.iterationTimeoutMinutes * 60_000,
     prompt: buildPrompt(template, d.task, cfg),
     model,
-    env: claudeEnv(cfg, d.account),
+    env: accountProcessEnv(cfg, d.account),
   });
   const finishedAt = new Date();
-  const result = classify(raw, finishedAt, cfg);
+  const result = classify(raw, finishedAt, cfg, kind);
   const note = needHumanNote(progressBefore, readProgress(cfg), d.task);
   let planAfter;
   try {
@@ -181,17 +192,18 @@ async function step(cfg) {
   saveState(cfg.stateDir, next);
   setPauseAfterTask(cfg, false);
   commands.busy = false;
-  logEvent(cfg, `${d.task.id} → ${result.kind}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
+  const detail = result.detail ? `: ${result.detail.replace(/\s+/g, ' ').trim().slice(-200)}` : '';
+  logEvent(cfg, `${d.task.id} → ${result.kind}${detail}; status ${next.status}${next.nextAttemptAt ? ` until ${next.nextAttemptAt}` : ''}${next.reason ? ` (${next.reason})` : ''}`);
   const finished = planAfter.tasks.find(t => t.id === d.task.id)?.done;
   try {
     appendRun(cfg.logDir, {
       at: finishedAt.toISOString(),
       project: projectByDir(cfg, cfg.projectDir)?.name ?? basename(cfg.projectDir),
       plan: basename(cfg.planPath),
-      task: d.task.id, title: d.task.title, model, attempt,
+      task: d.task.id, title: d.task.title, ...(executor && { executor }), model, attempt,
       result: result.kind, done: Boolean(finished),
       durationSec: Math.round((finishedAt - now) / 1000),
-      ...usageOf(raw.output ?? ''),
+      ...usageOf(raw.output ?? '', kind),
     });
   } catch (err) {
     logEvent(cfg, `runs.jsonl не записан: ${err.message}`);
@@ -200,10 +212,17 @@ async function step(cfg) {
   if (finished && cfg.notifyEachTask) {
     await send(cfg, { title: `${d.task.id} готова`, message: withProgress(cfg, `${d.task.title}${model ? ` · ${model}` : ''}`), tags: 'heavy_check_mark', priority: 2, actions: buttonsFor('task') });
   }
-  if (d.account && result.kind === 'limit' && next.account !== pre.account) {
+  const codexOff = executor && kind === 'codex' && next.account !== pre.account;
+  if (codexOff && result.kind === 'limit') {
+    const msg = codexLimitMessage(shortTime(next.accountLimits[pre.account]));
+    logEvent(cfg, msg.message);
+    await send(cfg, msg);
+  } else if (codexOff && result.kind === 'auth') {
+    logEvent(cfg, codexAuthMessage().message);
+    await send(cfg, codexAuthMessage());
+  } else if (d.account && result.kind === 'limit' && next.account !== pre.account) {
     await announceAccount(cfg, 'Автопилот: запасная учётка', `Лимит «${pre.account}» до ${shortTime(next.accountLimits[pre.account])}, продолжаю на «${next.account}»`);
-  }
-  if (d.account && result.kind === 'auth' && next.status !== 'auth') {
+  } else if (d.account && result.kind === 'auth' && next.status !== 'auth') {
     const go = next.account !== pre.account ? `, продолжаю на «${next.account}»` : `, жду сброса лимита до ${shortTime(next.nextAttemptAt)}`;
     await announceAccount(cfg, 'Автопилот: запасная учётка не авторизована', `Запасная учётка не авторизована: «${pre.account}»${go}`);
   }

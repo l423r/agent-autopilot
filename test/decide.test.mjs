@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parsePlan } from '../lib/plan.mjs';
-import { decide, applyResult, resume, initialState, markRunning } from '../lib/decide.mjs';
+import { decide, applyResult, resume, initialState, markRunning, preRun } from '../lib/decide.mjs';
 
 const baseCfg = JSON.parse(readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
 const cfg = { ...baseCfg, accounts: undefined };
@@ -290,4 +290,81 @@ test('accounts: resume while sleeping on an auth mark drops the mark only', () =
   const r = resume(s);
   assert.equal('accountAuth' in r, false);
   assert.equal(r.status, 'sleeping');
+});
+
+// --- Codex executor: cfg.executor 'codex', a codex account besides the Claude one ---
+
+const cx = { ...cfg, executor: 'codex', accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome: '/tmp/cx' }] };
+const planPlanner = parsePlan(`## Этап 1. A
+### Task 1: one
+- [x] s
+### Task 2: [planner] deploy
+- [ ] s
+### Task 3: three
+- [ ] s`);
+const plannerTask = planPlanner.tasks[1];
+
+test('codex: an ordinary task runs on codex, a [planner] task on claude', () => {
+  const d = decide(initialState(), plan, now, cx);
+  assert.deepEqual([d.action, d.account, d.kind, d.switched], ['run', 'codex', 'codex', null]);
+  const p = decide(initialState(), planPlanner, now, cx);
+  assert.deepEqual([p.action, p.account, p.kind], ['run', 'основная', 'claude']);
+});
+
+test('codex: preRun keeps the account of the last ordinary task in taskAccount; a [planner] run does not touch it', () => {
+  const d = decide(initialState(), plan, now, cx);
+  const s = preRun(initialState(), d, cx);
+  assert.deepEqual([s.account, s.taskAccount], ['codex', 'codex']);
+  const p = preRun(s, decide(s, planPlanner, now, cx), cx);
+  assert.deepEqual([p.account, p.taskAccount], ['основная', 'codex']);
+  const back = decide({ ...p, status: 'idle' }, plan, now, cx);
+  assert.deepEqual([back.account, back.switched], ['codex', null]);
+});
+
+test('codex: without executor preRun adds no taskAccount (state.json as before)', () => {
+  const d = decide(initialState(), plan, now, two);
+  assert.equal('taskAccount' in preRun(initialState(), d, two), false);
+  assert.deepEqual(preRun(initialState(), decide(initialState(), plan, now, cfg), cfg), initialState());
+});
+
+test('codex: a limit on codex → the same task on claude at once, the attempt not counted', () => {
+  const s0 = { ...pre, account: 'codex', taskAccount: 'codex' };
+  const s = applyResult(s0, task2, { kind: 'limit', resetAt: later }, plan, now, cx);
+  assert.equal(s.status, 'idle');
+  assert.deepEqual([s.account, s.taskAccount], ['основная', 'основная']);
+  assert.deepEqual(s.attempts, { 'Task 2': 1 });
+  assert.equal(s.accountLimits.codex, later.toISOString());
+  const d = decide(s, plan, now, cx);
+  assert.deepEqual([d.account, d.kind, d.switched], ['основная', 'claude', null]);
+  const after = decide(s, plan, new Date(later.getTime() + 1000), cx);
+  assert.deepEqual([after.account, after.kind, after.switched], ['codex', 'codex', 'back']);
+});
+
+test('codex: a limit on claude during a [planner] task never moves it to codex → sleeping', () => {
+  const s0 = { ...pre, attempts: {}, account: 'основная', taskAccount: 'codex' };
+  const s = applyResult(s0, plannerTask, { kind: 'limit', resetAt: later }, planPlanner, now, cx);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.nextAttemptAt, later.toISOString());
+  assert.equal(s.taskAccount, 'codex');
+});
+
+test('codex: everything limited → one sleep until the earliest reset', () => {
+  const soon = new Date('2026-10-20T13:00:00Z');
+  const s0 = { ...pre, account: 'основная', taskAccount: 'основная', accountLimits: { codex: soon.toISOString() } };
+  const s = applyResult(s0, task2, { kind: 'limit', resetAt: later }, plan, now, cx);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.nextAttemptAt, soon.toISOString());
+  assert.deepEqual(decide(s, plan, now, cx), { action: 'sleep', until: soon });
+});
+
+test('codex: not logged in → codex marked, claude goes on (also when codex is listed first)', () => {
+  for (const accounts of [cx.accounts, [...cx.accounts].reverse()]) {
+    const c = { ...cx, accounts };
+    const s = applyResult({ ...pre, account: 'codex', taskAccount: 'codex' }, task2, { kind: 'auth' }, plan, now, c);
+    assert.equal(s.status, 'idle');
+    assert.equal(s.account, 'основная');
+    assert.deepEqual(s.accountAuth, ['codex']);
+  }
+  const claudeAuth = applyResult({ ...pre, account: 'основная' }, task2, { kind: 'auth' }, plan, now, { ...cx, accounts: [...cx.accounts].reverse() });
+  assert.equal(claudeAuth.status, 'auth');
 });

@@ -111,3 +111,15 @@ test('once writes a run line, also when the run fails; stats shows it', async ()
   const other = await exec(root, ['stats', '--plan', 'other.md']);
   assert.match(other.stdout, /Запусков пока нет/);
 });
+
+test('summarizeRuns groups runs with an executor by executor/model, old lines by model', () => {
+  const lines = [
+    JSON.stringify({ executor: 'codex', model: 'sonnet', result: 'ok', done: true, durationSec: 10 }),
+    JSON.stringify({ executor: 'claude', model: 'sonnet', result: 'ok', done: true, durationSec: 20 }),
+    JSON.stringify({ executor: 'codex', model: null, result: 'limit', done: false, durationSec: 2 }),
+    JSON.stringify({ model: 'haiku', result: 'ok', done: true, durationSec: 4 }),
+  ];
+  const s = summarizeRuns(lines);
+  assert.deepEqual(Object.keys(s.byModel).sort(), ['claude/sonnet', 'codex/sonnet', 'codex/по умолчанию', 'haiku']);
+  assert.equal(s.byModel['codex/sonnet'].done, 1);
+});

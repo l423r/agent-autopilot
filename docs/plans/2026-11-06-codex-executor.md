@@ -67,8 +67,8 @@
 
 **Files:** Modify `autopilot.mjs`, `lib/decide.mjs`, `lib/runs.mjs`, `lib/notify.mjs`; Test `test/cli.test.mjs`, `test/decide.test.mjs`, `test/runs.test.mjs`
 
-- [ ] **Step 1:** Сквозные тесты на `fake-codex.sh` и `fake-claude.sh`: план из обычной задачи, `[planner]`-задачи и ещё одной обычной → исполнители codex, claude, codex; лимит Codex на 1-й → она же сразу на Claude, без роста попыток, уведомление одно; сдвиг времени сброса → следующая обычная снова на Codex; лог и `stats` с исполнителем. `npm test` → FAIL.
-- [ ] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat: codex executes tasks, claude stays the head`
+- [x] **Step 1:** Сквозные тесты на `fake-codex.sh` и `fake-claude.sh`: план из обычной задачи, `[planner]`-задачи и ещё одной обычной → исполнители codex, claude, codex; лимит Codex на 1-й → она же сразу на Claude, без роста попыток, уведомление одно; сдвиг времени сброса → следующая обычная снова на Codex; лог и `stats` с исполнителем. `npm test` → FAIL.
+- [x] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat: codex executes tasks, claude stays the head`
 
 ### Task 6: Лимиты Codex в пульте и status · model: sonnet
 

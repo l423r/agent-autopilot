@@ -1178,3 +1178,119 @@ test('promptTemplate: ordinary task on codex gets prompt-codex.md, planner and c
   assert.match(planner, /Ты — планировщик проектов на этом сервере/);
   assert.doesNotMatch(planner, /сначала напиши тест/);
 });
+
+// --- Codex executes ordinary tasks, Claude [planner] ones and the fallback (fake-codex.sh + fake-claude.sh) ---
+
+const fakeCodexSh = fileURLToPath(new URL('./fixtures/fake-codex.sh', import.meta.url));
+function setupCodex(planText, { ntfy } = {}) {
+  const { root, cfg } = setup();
+  writeFileSync(join(root, 'plan.md'), planText);
+  const codexHome = tempDir('ap-codex-');
+  writeFileSync(join(root, 'config.json'), JSON.stringify({
+    ...cfg, projects: undefined, retryMinutes: 15, executor: 'codex',
+    accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome }],
+    ...(ntfy && { ntfyServer: ntfy.url, ntfyTopic: 'tp' }),
+  }));
+  const accountLog = join(root, 'accounts.log');
+  const go = (args, codexMode = 'ok') => run('node', [cli, ...args], {
+    env: {
+      ...process.env, CLAUDE_CONFIG_DIR: '', CODEX_HOME: '', AUTOPILOT_CONFIG: join(root, 'config.json'),
+      AUTOPILOT_CLAUDE: fakeSh, AUTOPILOT_CODEX: fakeCodexSh, FAKE_MODE: 'tick', FAKE_CODEX_MODE: codexMode,
+      FAKE_PLAN: join(root, 'plan.md'), FAKE_ACCOUNT_LOG: accountLog,
+    },
+    timeout: 30_000,
+  });
+  const runsOf = () => readFileSync(join(root, 'logs', 'runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const accountRuns = () => readFileSync(accountLog, 'utf8').trim().split('\n');
+  return { root, codexHome, go, runsOf, accountRuns, log: () => readFileSync(join(root, 'logs', 'autopilot.log'), 'utf8') };
+}
+const CODEX_PLAN = `## Этап 1. A
+### Task 1: first
+- [ ] s
+### Task 2: [planner] Выкладка
+- [ ] s
+### Task 3: third · model: sonnet
+- [ ] s
+`;
+
+test('codex: ordinary, [planner], ordinary → codex, claude, codex; log, runs.jsonl and stats name the executor', async () => {
+  const c = setupCodex(CODEX_PLAN);
+  await c.go(['run']);
+  assert.equal(state(c.root).status, 'done');
+  assert.deepEqual(c.accountRuns(), ['Task 1 codex', 'Task 2 -', 'Task 3 codex']);
+  const log = c.log();
+  assert.match(log, /run Task 1 \(codex, попытка 1\): first\n/);
+  assert.match(log, /run Task 2 \(claude\/opus, попытка 1\): Выкладка\n/);
+  assert.match(log, /run Task 3 \(codex\/sonnet, попытка 1\): third\n/);
+  assert.doesNotMatch(log, /Вернулся|продолжаю на|задачу делает/);
+  assert.deepEqual(c.runsOf().map(r => [r.task, r.executor, r.model, r.result]), [
+    ['Task 1', 'codex', null, 'ok'], ['Task 2', 'claude', 'opus', 'ok'], ['Task 3', 'codex', 'sonnet', 'ok'],
+  ]);
+  assert.equal(c.runsOf()[0].tokens.output, 300);
+  const iter = readdirSync(join(c.root, 'logs')).filter(f => f.startsWith('iter-')).sort().map(f => readFileSync(join(c.root, 'logs', f), 'utf8'));
+  assert.match(iter[0], /^args: exec --json/m);
+  assert.match(iter[0], /свежий ревьюер/);
+  assert.match(iter[0], new RegExp(`CODEX_HOME=${c.codexHome} CLAUDE_CONFIG_DIR=-`));
+  const { stdout } = await c.go(['stats']);
+  assert.match(stdout, /^codex\/по умолчанию \| 1 \| 1 /m);
+  assert.match(stdout, /^claude\/opus \| 1 \| 1 /m);
+  assert.match(stdout, /^codex\/sonnet \| 1 \| 1 /m);
+});
+
+test('codex: a limit on the 1st task → the same task on Claude at once, attempt 1, one notification; reset passed → next task back on codex', async () => {
+  const { fakeNtfy } = await import('./notify.test.mjs');
+  const n = await fakeNtfy();
+  const c = setupCodex(`## Этап 1. A
+### Task 1: first
+- [ ] s
+### Task 2: second
+- [ ] s
+`, { ntfy: n });
+  await c.go(['once'], 'limit-no-time');
+  let s = state(c.root);
+  assert.equal(s.status, 'idle');
+  assert.equal(s.account, 'основная');
+  assert.ok(new Date(s.accountLimits.codex) > new Date());
+  assert.equal(s.attempts['Task 1'], undefined);
+  await c.go(['once'], 'limit-no-time');
+  assert.deepEqual(c.accountRuns(), ['Task 1 codex', 'Task 1 -']);
+  assert.deepEqual(c.runsOf().map(r => [r.task, r.executor, r.result, r.attempt]), [['Task 1', 'codex', 'limit', 1], ['Task 1', 'claude', 'ok', 1]]);
+  const switches = n.got.filter(g => /Codex/.test(g.body));
+  assert.equal(switches.length, 1, n.got.map(g => g.body).join(' | '));
+  assert.match(switches[0].body, /^Лимит Codex до .+, задачу делает Claude$/);
+
+  s = state(c.root);
+  writeFileSync(join(c.root, 'state', 'state.json'), JSON.stringify({ ...s, accountLimits: { codex: new Date(Date.now() - 60_000).toISOString() } }));
+  await c.go(['once']);
+  n.close();
+  assert.deepEqual(c.accountRuns(), ['Task 1 codex', 'Task 1 -', 'Task 2 codex']);
+  assert.doesNotMatch(readFileSync(join(c.root, 'plan.md'), 'utf8'), /- \[ \]/);
+  assert.equal(state(c.root).taskAccount, 'codex');
+  assert.equal(c.log().match(/Вернулся на Codex/g).length, 1);
+  assert.equal(n.got.filter(g => /Вернулся на Codex/.test(g.body)).length, 1);
+});
+
+test('codex: not logged in → the task goes on on Claude, the autopilot does not stop with auth', async () => {
+  const c = setupCodex(`## Этап 1. A
+### Task 1: first
+- [ ] s
+`);
+  await c.go(['run'], 'auth');
+  const s = state(c.root);
+  assert.equal(s.status, 'done');
+  assert.deepEqual(s.accountAuth, ['codex']);
+  assert.deepEqual(c.accountRuns(), ['Task 1 codex', 'Task 1 -']);
+  assert.match(c.log(), /Codex не авторизован, задачу делает Claude/);
+});
+
+test('codex: a crash without JSON is an ordinary error with the output tail in the log', async () => {
+  const c = setupCodex(`## Этап 1. A
+### Task 1: first
+- [ ] s
+`);
+  await c.go(['once'], 'crash');
+  const s = state(c.root);
+  assert.equal(s.status, 'sleeping');
+  assert.equal(s.attempts['Task 1'], 1);
+  assert.match(c.log(), /Task 1 → error.*panicked at exec/);
+});
