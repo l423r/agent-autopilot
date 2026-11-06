@@ -442,3 +442,4 @@ claude/по умолчанию | 1 | 1 | 0 с | $0.42 | 20
 - minor (отложено): `cfg.executor` не проверяется — опечатка молча означает Claude.
 - Ruling по «Declined to judge» ревьюера: нет бинарника codex (ENOENT) → обычная ошибка, не fallback — вне плана (fallback только для limit/auth), оставлено; доступ агента к auth.json при bypass-флаге — требование плана; остальное — уже зафиксированные решения.
 - 2026-11-06 14:48 Task 8: сделано — ревью свежим субагентом (opus) по Global Constraints и Review Focus; исправлены 2 Important через TDD (codex-only accounts теряли Claude; ложный auth/limit из вывода агента при падении Codex), 9 minor отложены в журнал; npm test 445/445
+- 2026-11-06 14:52 Task 9: сделано — README: раздел «Codex — исполнитель»; config.example.json с executor и учёткой codex (без codexModels: идентификаторы моделей не проверены); строка про Codex в web/planner-prompt.md; тесты docs.test.mjs (4 новых/обновлённых), npm test 448/448

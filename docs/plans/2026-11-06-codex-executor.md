@@ -91,7 +91,7 @@
 
 **Files:** Modify `README.md`, `config.example.json`, `web/planner-prompt.md`
 
-- [ ] **Step 1:** README: раздел «Codex — исполнитель» (кто что делает, поля `executor`, `accounts[kind=codex]`, `codexModels`, выбор и возврат, лимиты в пульте, вход `codex login --device-auth`, `stats` по исполнителям). `config.example.json` — пример. `web/planner-prompt.md`: одна строка — «обычные задачи выполняет Codex без навыков Claude: шаги плана пиши явно (команды, ожидаемый вывод), ревью — „свежий ревьюер в новой сессии“». **Commit** — `docs: codex executor`
+- [x] **Step 1:** README: раздел «Codex — исполнитель» (кто что делает, поля `executor`, `accounts[kind=codex]`, `codexModels`, выбор и возврат, лимиты в пульте, вход `codex login --device-auth`, `stats` по исполнителям). `config.example.json` — пример. `web/planner-prompt.md`: одна строка — «обычные задачи выполняет Codex без навыков Claude: шаги плана пиши явно (команды, ожидаемый вывод), ревью — „свежий ревьюер в новой сессии“». **Commit** — `docs: codex executor`
 
 ### Task 10: [manual] Вход в Codex под ChatGPT Plus
 

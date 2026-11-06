@@ -18,8 +18,10 @@
   ],
   "accounts": [
     { "name": "основная" },
-    { "name": "запасная", "configDir": "/root/.claude-alt" }
+    { "name": "запасная", "configDir": "/root/.claude-alt" },
+    { "name": "codex", "kind": "codex", "codexHome": "/root/.codex" }
   ],
+  "executor": "codex",
   "retryMinutes": 15,
   "maxAttempts": 3,
   "iterationTimeoutMinutes": 60,
