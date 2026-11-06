@@ -82,7 +82,7 @@
 
 ### Task 8: [planner] Включение и финальный артефакт · model: sonnet
 
-- [ ] **Step 1:** Дождаться, пока `status` — не `running`. Перезапустить `agent-autopilot-web` и `agent-autopilot`. Проверить живой пульт: `GET /api/queue` отдаёт `body` и `steps` для текущих «Ждёт вас»; скриншот вкладки «Статус» в 390 px — пользователю через `web/share-image.mjs`. Итог — в журнал.
+- [x] **Step 1:** Дождаться, пока `status` — не `running`. Перезапустить `agent-autopilot-web` и `agent-autopilot`. Проверить живой пульт: `GET /api/queue` отдаёт `body` и `steps` для текущих «Ждёт вас»; скриншот вкладки «Статус» в 390 px — пользователю через `web/share-image.mjs`. Итог — в журнал.
 
 ### Task 9: [manual] Проверка с телефона
 
