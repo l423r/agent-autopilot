@@ -25,7 +25,7 @@
 - Строка лога и запись `stats` содержат исполнителя: `run Task N (codex/sonnet, попытка 1)`; `node autopilot.mjs stats` разбивает статистику по исполнителю и модели.
 - Переключения исполнителя — как переключения учёток: одно уведомление ntfy на переключение («Лимит Codex до <время>, задачу делает Claude» / «Вернулся на Codex»), возврат на Codex — перед следующей задачей после сброса его лимита.
 - Токены из `~/.codex/auth.json` и `.credentials.json` не попадают в лог, уведомления, ответы API и тесты.
-- Службы `agent-autopilot` и `agent-autopilot-web` в задачах 1–8 не перезапускать (их перезапуск — Task 11). `git push` в задачах не делать. Журнал — `docs/plans/2026-11-06-codex-executor.progress.md`. Автор коммитов — L423R.
+- Службы `agent-autopilot` и `agent-autopilot-web` в задачах 1–8 не перезапускать (`agent-autopilot-web` — Task 11, `agent-autopilot` — только планировщик в Task 12: исполнитель работает внутри демона). `git push` в задачах не делать. Журнал — `docs/plans/2026-11-06-codex-executor.progress.md`. Автор коммитов — L423R.
 
 ## Review Focus
 
@@ -99,4 +99,8 @@
 
 ### Task 11: [planner] Включение · model: sonnet
 
-- [ ] **Step 1:** Сверить фикстуры Task 3 с реальным выводом `codex exec --json` (успех; событие с `rate_limits`) — расхождения исправить через TDD, `npm test` → PASS. Дождаться, пока `status` — не `running`. В `config.json`: `executor: "codex"`, запись `codex` в `accounts`, `codexModels` из журнала Task 1. Перезапустить `agent-autopilot` и `agent-autopilot-web`. `status` показывает исполнителя и лимиты Codex; в пульте — строка Codex в блоке лимитов. Итог — в журнал.
+- [ ] **Step 1:** Сверить фикстуры Task 3 с реальным выводом `codex exec --json` (успех; событие с `rate_limits`) — расхождения исправить через TDD, `npm test` → PASS. Дождаться, пока `status` — не `running`. В `config.json`: `executor: "codex"`, запись `codex` в `accounts`, `codexModels` из журнала Task 1. Перезапустить `agent-autopilot-web` (не `agent-autopilot`: исполнитель работает внутри него). В журнал — строку `НУЖЕН ПЕРЕЗАПУСК agent-autopilot` (его делает планировщик в Task 12).
+
+### Task 12: [manual] Перезапуск демона и проверка
+
+- [ ] **Step 1:** Планировщик в чате пульта, когда `status` — не `running`: `systemctl restart agent-autopilot`; `status` показывает `Исполнитель: codex` и лимиты Codex; первая следующая обычная задача в логе — `run Task N (codex/…)`. Итог — пользователю и в журнал; шаг отмечает планировщик.

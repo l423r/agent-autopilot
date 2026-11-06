@@ -82,6 +82,6 @@
 
 - [ ] **Step 1:** Планировщик запускает `bash scripts/setup-alt-account.sh`, затем в терминале пульта `CLAUDE_CONFIG_DIR=/root/.claude-alt claude` → `/login`; пользователь открывает ссылку входа с телефона под второй учёткой и присылает код. Проверка: `CLAUDE_CONFIG_DIR=/root/.claude-alt claude -p "ответь ок"` → «ок»; `/root/.claude-alt/.credentials.json` есть, основной `/root/.claude/.credentials.json` не изменился.
 
-### Task 9: [planner] Включение · model: sonnet
+### Task 9: [manual] Включение (делает планировщик в чате)
 
 - [ ] **Step 1:** Дождаться паузы между задачами (`status` — не `running`). В `config.json` добавить `accounts` по Global Constraints. Перезапустить `agent-autopilot` и `agent-autopilot-web`. `status` показывает «Учётка: основная», в пульте — лимиты двух учёток. Итог — в журнал.
