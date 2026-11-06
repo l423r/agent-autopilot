@@ -54,8 +54,8 @@
 
 **Files:** Modify `lib/runner.mjs`, `lib/classify.mjs`, `lib/models.mjs`; Create `test/fixtures/fake-codex.sh`, фикстуры JSONL в `test/fixtures/codex/`; Test `test/runner.test.mjs`, `test/classify.test.mjs`, `test/models.test.mjs`
 
-- [ ] **Step 1:** Фикстуры JSONL по формату установленной версии (из `codex exec --json` документации/исходников пакета; если вход ещё не выполнен — по документации, с пометкой в журнале «сверить в Task 11»): успех, ошибка, лимит с `rate_limits`, лимит без времени, нет входа. Падающие тесты: аргументы команды Codex (модель и уровень из `codexModels`, рабочий каталог, JSON, без подтверждений), `CODEX_HOME` только у процесса codex, разбор всех фикстур (Review Focus 2). `npm test` → FAIL.
-- [ ] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(runner): run tasks through codex exec`
+- [x] **Step 1:** Фикстуры JSONL по формату установленной версии (из `codex exec --json` документации/исходников пакета; если вход ещё не выполнен — по документации, с пометкой в журнале «сверить в Task 11»): успех, ошибка, лимит с `rate_limits`, лимит без времени, нет входа. Падающие тесты: аргументы команды Codex (модель и уровень из `codexModels`, рабочий каталог, JSON, без подтверждений), `CODEX_HOME` только у процесса codex, разбор всех фикстур (Review Focus 2). `npm test` → FAIL.
+- [x] **Step 2:** Реализация. `npm test` → PASS. **Commit** — `feat(runner): run tasks through codex exec`
 
 ### Task 4: Промпт для Codex · model: sonnet
 

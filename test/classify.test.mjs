@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { classify, parseResetTime } from '../lib/classify.mjs';
+import { classify, parseResetTime, usageOf } from '../lib/classify.mjs';
 
 const cfg = JSON.parse(readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
 const now = new Date('2026-10-20T12:00:00Z');
@@ -66,4 +66,58 @@ test('failed run mentioning another service authentication is an error, not auth
 });
 test('claude login prompt is auth', () => {
   assert.equal(classify({ exitCode: 1, output: 'Invalid API key · Please run /login', timedOut: false }, now, cfg).kind, 'auth');
+});
+
+const fixture = name => readFileSync(new URL(`./fixtures/codex/${name}.jsonl`, import.meta.url), 'utf8');
+const codex = (name, exitCode = name === 'ok' ? 0 : 1) => classify({ exitCode, output: fixture(name), timedOut: false }, now, cfg, 'codex');
+
+test('codex: turn.completed is ok, even with limit/auth words in the agent text and a transient error', () => {
+  assert.deepEqual(codex('ok'), { kind: 'ok' });
+});
+test('codex: turn.failed without limit or auth → error with the failure message', () => {
+  assert.deepEqual(codex('error'), { kind: 'error', detail: 'stream disconnected before completion: Transport error: network error' });
+});
+test('codex: usage limit takes resetAt from the exhausted rate_limits window', () => {
+  const r = codex('limit-rate-limits');
+  assert.equal(r.kind, 'limit');
+  assert.equal(iso(r.resetAt), '2026-10-20T15:00:00.000Z');
+});
+test('codex: both windows exhausted → the later reset', () => {
+  const out = fixture('limit-rate-limits').replace('"used_percent":41.0', '"used_percent":100.0');
+  const r = classify({ exitCode: 1, output: out, timedOut: false }, now, cfg, 'codex');
+  assert.equal(iso(r.resetAt), '2026-10-24T12:00:00.000Z');
+});
+test('codex: usage limit with «try again at <date>» in the message', () => {
+  const r = codex('limit-try-again');
+  assert.equal(r.kind, 'limit');
+  assert.equal(iso(r.resetAt), '2026-10-22T09:00:00.000Z');
+});
+test('codex: usage limit without a time → limit without resetAt', () => {
+  assert.deepEqual(codex('limit-no-time'), { kind: 'limit' });
+});
+test('codex: 401 Unauthorized → auth', () => {
+  assert.deepEqual(codex('auth'), { kind: 'auth' });
+});
+test('codex: exit 0 but turn.failed → not ok', () => {
+  assert.equal(codex('limit-no-time', 0).kind, 'limit');
+});
+test('codex: crash without JSON → error with the output tail', () => {
+  const output = 'x'.repeat(1000) + "\nthread 'main' panicked at exec/src/lib.rs:1: boom\n";
+  const r = classify({ exitCode: 101, output, timedOut: false }, now, cfg, 'codex');
+  assert.equal(r.kind, 'error');
+  assert.ok(r.detail.endsWith("thread 'main' panicked at exec/src/lib.rs:1: boom"));
+  assert.ok(r.detail.length <= 500);
+});
+test('codex: plain-text «Not logged in» without JSON → auth', () => {
+  assert.deepEqual(classify({ exitCode: 1, output: 'Error: Not logged in. Run codex login\n', timedOut: false }, now, cfg, 'codex'), { kind: 'auth' });
+});
+test('codex: timeout', () => {
+  assert.deepEqual(classify({ exitCode: null, output: fixture('ok'), timedOut: true }, now, cfg, 'codex'), { kind: 'timeout' });
+});
+test('codex: a 401 for Claude stays under Claude patterns (no codex auth rules)', () => {
+  assert.equal(classify({ exitCode: 1, output: fixture('auth'), timedOut: false }, now, cfg).kind, 'error');
+});
+test('codex usage: tokens from turn.completed, no cost', () => {
+  assert.deepEqual(usageOf(fixture('ok'), 'codex'), { tokens: { input: 1200, output: 300, cacheRead: 800, cacheWrite: null }, costUsd: null });
+  assert.deepEqual(usageOf('garbage', 'codex'), { tokens: null, costUsd: null });
 });

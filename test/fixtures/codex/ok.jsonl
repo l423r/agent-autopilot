@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1b0a3-0000-7000-8000-000000000001"}
+{"type":"turn.started"}
+{"type":"error","message":"Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error)"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"bash -lc 'npm test'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"bash -lc 'npm test'","aggregated_output":"# pass 12\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Task 2 done: usage limit parsing, You've hit your usage limit handled, not logged in → auth."}}
+{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":300}}

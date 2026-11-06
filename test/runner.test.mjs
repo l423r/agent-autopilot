@@ -82,3 +82,39 @@ test('killOrphan ignores a pid recorded in another boot', async () => {
   assert.equal(existsSync(join(stateDir, 'child.pid')), false);
   process.kill(-child.pid, 'SIGKILL');
 });
+
+const fakeCodex = fileURLToPath(new URL('./fixtures/fake-codex.sh', import.meta.url));
+const codexModels = { haiku: { model: 'gpt-fast', effort: 'low' }, sonnet: { model: 'gpt-main', effort: 'medium' } };
+
+test('codex: exec --json in projectDir without approvals, model and effort from codexModels, prompt last', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  const r = await runIteration({ task, cfg: { ...cfg, codexModels }, stateDir, logDir, executor: 'codex', codexBin: fakeCodex, timeoutMs: 10_000, prompt: '-Do Task 2', model: 'sonnet' });
+  assert.equal(r.exitCode, 0);
+  assert.match(r.output, new RegExp(`^args: exec --json -C ${cfg.projectDir} --dangerously-bypass-approvals-and-sandbox -m gpt-main -c model_reasoning_effort="medium"$`, 'm'));
+  assert.match(r.output, /^prompt: -Do Task 2$/m);
+  assert.doesNotMatch(r.output, /--permission-mode|--output-format/);
+  assert.match(r.output, /"turn.completed"/);
+});
+
+test('codex: no model, or a mark missing from codexModels → codex default model, no -m', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  for (const model of [null, 'opus']) {
+    const r = await runIteration({ task, cfg: { ...cfg, codexModels }, stateDir, logDir, executor: 'codex', codexBin: fakeCodex, timeoutMs: 10_000, model });
+    assert.doesNotMatch(r.output, / -m | model_reasoning_effort/);
+  }
+});
+
+test('CODEX_HOME reaches the codex process only; codex gets no CLAUDE_CONFIG_DIR', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  const saved = { CODEX_HOME: process.env.CODEX_HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+  process.env.CODEX_HOME = '/daemon/codex';
+  process.env.CLAUDE_CONFIG_DIR = '/daemon/claude';
+  try {
+    const c = await runIteration({ task, cfg, stateDir, logDir, executor: 'codex', codexBin: fakeCodex, timeoutMs: 10_000, env: { CODEX_HOME: '/acc/codex' } });
+    assert.match(c.output, /^env: CODEX_HOME=\/acc\/codex CLAUDE_CONFIG_DIR=-$/m);
+    const k = await runIteration({ task, cfg, stateDir, logDir, claudeBin: fake, timeoutMs: 10_000, env: { FAKE_MODE: 'env' } });
+    assert.match(k.output, /^env: CODEX_HOME=-$/m);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+});

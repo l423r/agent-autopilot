@@ -33,6 +33,8 @@ if (mode === 'ok') {
 } else if (mode === 'args') {
   // Prints its command line (without the prompt) so tests can check the flags.
   console.log(`args: ${process.argv.slice(2).filter((a, i, all) => all[i - 1] !== '-p').join(' ')}`);
+} else if (mode === 'env') {
+  console.log(`env: CODEX_HOME=${process.env.CODEX_HOME ?? '-'}`);
 } else if (mode === 'killparent') {
   process.kill(process.ppid, 'SIGKILL');
 } else if (mode === 'hang') {

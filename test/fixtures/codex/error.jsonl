@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1b0a3-0000-7000-8000-000000000002"}
+{"type":"turn.started"}
+{"type":"error","message":"stream disconnected before completion: Transport error: network error"}
+{"type":"turn.failed","error":{"message":"stream disconnected before completion: Transport error: network error"}}

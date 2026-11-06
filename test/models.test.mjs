@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MODELS, modelFor, validateModelConfig } from '../lib/models.mjs';
+import { MODELS, modelFor, codexModelFor, validateModelConfig } from '../lib/models.mjs';
 
 test('MODELS is the escalation ladder', () => {
   assert.deepEqual(MODELS, ['haiku', 'sonnet', 'opus']);
@@ -43,4 +43,19 @@ test('validateModelConfig rejects unknown defaultModel', () => {
   assert.throws(() => validateModelConfig({ defaultModel: 'gpt' }), { message: 'defaultModel: допустимо haiku, sonnet, opus' });
   assert.doesNotThrow(() => validateModelConfig({}));
   assert.doesNotThrow(() => validateModelConfig({ defaultModel: 'opus' }));
+});
+
+test('codexModelFor maps a mark to codexModels; missing mark or entry → null', () => {
+  const cfg = { codexModels: { sonnet: { model: 'gpt-main', effort: 'medium' } } };
+  assert.deepEqual(codexModelFor('sonnet', cfg), { model: 'gpt-main', effort: 'medium' });
+  assert.equal(codexModelFor('opus', cfg), null);
+  assert.equal(codexModelFor(null, cfg), null);
+  assert.equal(codexModelFor('sonnet', {}), null);
+});
+
+test('validateModelConfig checks codexModels', () => {
+  assert.doesNotThrow(() => validateModelConfig({ codexModels: { haiku: { model: 'a', effort: 'low' }, opus: { model: 'b', effort: 'high' } } }));
+  assert.throws(() => validateModelConfig({ codexModels: { gpt: { model: 'a', effort: 'low' } } }), { message: 'codexModels: ключи — haiku, sonnet, opus' });
+  assert.throws(() => validateModelConfig({ codexModels: { haiku: { model: '', effort: 'low' } } }), { message: 'codexModels.haiku: нет model' });
+  assert.throws(() => validateModelConfig({ codexModels: { haiku: { model: 'a', effort: 'max' } } }), { message: 'codexModels.haiku: effort — minimal, low, medium, high, xhigh' });
 });

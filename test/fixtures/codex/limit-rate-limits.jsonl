@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"01a1b0a3-0000-7000-8000-000000000003"}
+{"type":"turn.started"}
+{"type":"token_count","rate_limits":{"primary":{"used_percent":100.0,"window_minutes":300,"resets_at":1792508400},"secondary":{"used_percent":41.0,"window_minutes":10080,"resets_at":1792843200}}}
+{"type":"error","message":"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits"}
+{"type":"turn.failed","error":{"message":"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits"}}
