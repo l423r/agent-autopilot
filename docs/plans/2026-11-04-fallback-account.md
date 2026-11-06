@@ -10,6 +10,8 @@
 
 **Spec:** просьба пользователя 2026-11-04: «хочу чтоб автопилот поддерживал использование другой учетки клауд», режим — «запасная, при лимите основной». Данные второй учётки пользователь пришлёт 2026-11-05.
 
+> **Закрыт 2026-11-06:** вторая учётка Claude не нужна (решение пользователя). Код Tasks 1–7 остаётся и используется планом `2026-11-06-codex-executor.md` (учётка `codex`); Tasks 8–9 не выполняются, план убран из очереди.
+
 ## Global Constraints
 
 - Конфиг: `"accounts": [{ "name": "основная" }, { "name": "запасная", "configDir": "/root/.claude-alt" }]`. Порядок — приоритет: первая — основная. Учётка без `configDir` запускается без `CLAUDE_CONFIG_DIR` (как сейчас: `/root/.claude` + `~/.claude.json`). Нет `accounts` или в нём одна запись — поведение как сейчас, все существующие тесты зелёные.
@@ -78,10 +80,10 @@
 
 - [x] **Step 1:** README: раздел «Запасная учётка» — как работает переключение и возврат, поле `accounts`, `scripts/setup-alt-account.sh`, вход (`CLAUDE_CONFIG_DIR=/root/.claude-alt claude`, затем `/login`), строки `status`, блок лимитов в пульте. `config.example.json` — пример `accounts`. **Commit** — `docs: spare Claude account`
 
-### Task 8: [manual] Вход во вторую учётку
+### Task 8: [manual] Вход во вторую учётку — ОТМЕНЕНО 2026-11-06
 
 - [ ] **Step 1:** Планировщик запускает `bash scripts/setup-alt-account.sh`, затем в терминале пульта `CLAUDE_CONFIG_DIR=/root/.claude-alt claude` → `/login`; пользователь открывает ссылку входа с телефона под второй учёткой и присылает код. Проверка: `CLAUDE_CONFIG_DIR=/root/.claude-alt claude -p "ответь ок"` → «ок»; `/root/.claude-alt/.credentials.json` есть, основной `/root/.claude/.credentials.json` не изменился.
 
-### Task 9: [manual] Включение (делает планировщик в чате)
+### Task 9: [manual] Включение (делает планировщик в чате) — ОТМЕНЕНО 2026-11-06
 
 - [ ] **Step 1:** Дождаться паузы между задачами (`status` — не `running`). В `config.json` добавить `accounts` по Global Constraints. Перезапустить `agent-autopilot` и `agent-autopilot-web`. `status` показывает «Учётка: основная», в пульте — лимиты двух учёток. Итог — в журнал.
