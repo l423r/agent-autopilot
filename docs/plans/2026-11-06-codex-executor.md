@@ -39,7 +39,7 @@
 
 ### Task 1: [planner] Установка Codex CLI · model: sonnet
 
-- [ ] **Step 1:** `npm i -g @openai/codex` (при недоступности npm — зеркало `--registry https://registry.npmmirror.com`). `codex --version`, `codex --help`, `codex exec --help`, `codex login --help` — сохранить вывод в журнал (флаги неинтерактивного запуска, JSON-вывода, рабочего каталога, модели и уровня рассуждений, вход по коду устройства). Список доступных на Plus моделей — из документации `codex` (`codex --help`, README пакета в `$(npm root -g)/@openai/codex`) — в журнал с предложением для `codexModels`. Вход не выполнять (Task 10). **Commit** — `docs: codex CLI installed, flags noted` (только журнал)
+- [x] **Step 1:** `npm i -g @openai/codex` (при недоступности npm — зеркало `--registry https://registry.npmmirror.com`). `codex --version`, `codex --help`, `codex exec --help`, `codex login --help` — сохранить вывод в журнал (флаги неинтерактивного запуска, JSON-вывода, рабочего каталога, модели и уровня рассуждений, вход по коду устройства). Список доступных на Plus моделей — из документации `codex` (`codex --help`, README пакета в `$(npm root -g)/@openai/codex`) — в журнал с предложением для `codexModels`. Вход не выполнять (Task 10). **Commit** — `docs: codex CLI installed, flags noted` (только журнал)
 
 ### Task 2: Выбор исполнителя · model: opus
 
