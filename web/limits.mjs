@@ -1,6 +1,7 @@
 // Claude usage limits (5-hour and weekly windows) from the undocumented OAuth usage endpoint.
 // The token is read per call and never refreshed, logged or returned; any failure becomes { error }.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const TIMEOUT_MS = 10_000;
@@ -37,4 +38,53 @@ function usageWindow(w) {
   if (!w || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) return null;
   const resetsAt = typeof w.resets_at === 'string' && !Number.isNaN(Date.parse(w.resets_at)) ? w.resets_at : null;
   return { percent: w.utilization, resetsAt };
+}
+
+// Codex has no usage endpoint: its own session logs carry the last `rate_limits` event
+// ({ primary: 5 h, secondary: week }, resets_at in unix seconds). Nothing found → { error }, never a throw.
+const NO_CODEX_DATA = 'Нет данных о лимитах Codex';
+const MAX_SESSION_FILES = 20;
+
+export function fetchCodexLimits({ codexHome = '/root/.codex' } = {}) {
+  try {
+    for (const file of newestSessions(join(codexHome, 'sessions'))) {
+      const found = lastRateLimits(file);
+      if (found) return found;
+    }
+  } catch { /* unreadable sessions dir → no data */ }
+  return { error: NO_CODEX_DATA };
+}
+
+// Session files (.jsonl, any depth), newest first.
+function newestSessions(dir) {
+  const files = [];
+  const walk = d => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const path = join(d, e.name);
+      if (e.isDirectory()) walk(path);
+      else if (e.name.endsWith('.jsonl')) files.push({ path, mtime: statSync(path).mtimeMs });
+    }
+  };
+  walk(dir);
+  return files.sort((a, b) => b.mtime - a.mtime).slice(0, MAX_SESSION_FILES).map(f => f.path);
+}
+
+function lastRateLimits(file) {
+  const lines = readFileSync(file, 'utf8').split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"rate_limits"')) continue;
+    let event;
+    try { event = JSON.parse(lines[i]); } catch { continue; }
+    const r = event?.payload?.rate_limits ?? event?.rate_limits ?? event?.msg?.rate_limits;
+    const fiveHour = codexWindow(r?.primary);
+    const week = codexWindow(r?.secondary);
+    if (fiveHour && week) return { fiveHour, week };
+  }
+  return null;
+}
+
+function codexWindow(w) {
+  if (!w || typeof w.used_percent !== 'number' || !Number.isFinite(w.used_percent)) return null;
+  const resetsAt = typeof w.resets_at === 'number' && Number.isFinite(w.resets_at) ? new Date(w.resets_at * 1000).toISOString() : null;
+  return { percent: w.used_percent, resetsAt };
 }

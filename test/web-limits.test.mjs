@@ -1,9 +1,9 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fetchLimits } from '../web/limits.mjs';
+import { fetchLimits, fetchCodexLimits } from '../web/limits.mjs';
 import { startServer } from '../web/server.mjs';
 import { saveState } from '../lib/state.mjs';
 
@@ -139,4 +139,63 @@ test('/api/limits: no state.json → the primary is active', async () => {
   srv = await startServer(cfg, { port: 0, limitsFetch: async () => ({ error: 'x' }) });
   const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
   assert.deepEqual(body.accounts.map(a => a.active), [true, false]);
+});
+
+// --- Codex limits: the newest rate_limits event in $CODEX_HOME/sessions ---
+const rl = (p5, p7, at = 1792000000) => ({
+  timestamp: '2026-11-06T10:00:00Z', type: 'event_msg',
+  payload: { type: 'token_count', info: null, rate_limits: { limit_id: 'codex',
+    primary: { used_percent: p5, window_minutes: 300, resets_at: at },
+    secondary: { used_percent: p7, window_minutes: 10080, resets_at: at + 86400 } } },
+});
+const session = (home, day, name, events, mtime) => {
+  const dir = join(home, 'sessions', '2026', '11', day);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, name);
+  writeFileSync(file, events.map(e => typeof e === 'string' ? e : JSON.stringify(e)).join('\n') + '\n');
+  utimesSync(file, mtime, mtime);
+};
+
+test('fetchCodexLimits: newest session, last event with rate_limits', () => {
+  const home = join(root, 'codex');
+  session(home, '05', 'rollout-old.jsonl', [rl(90, 90)], 1000);
+  session(home, '06', 'rollout-new.jsonl', [rl(10, 20), { type: 'other' }, rl(30, 40), 'not json'], 2000);
+  assert.deepEqual(fetchCodexLimits({ codexHome: home }), {
+    fiveHour: { percent: 30, resetsAt: new Date(1792000000 * 1000).toISOString() },
+    week: { percent: 40, resetsAt: new Date((1792000000 + 86400) * 1000).toISOString() },
+  });
+});
+
+test('fetchCodexLimits: newest file without events → falls back to an older one', () => {
+  const home = join(root, 'codex');
+  session(home, '05', 'rollout-old.jsonl', [rl(55, 66)], 1000);
+  session(home, '06', 'rollout-new.jsonl', [{ type: 'other' }], 2000);
+  assert.equal(fetchCodexLimits({ codexHome: home }).fiveHour.percent, 55);
+});
+
+test('fetchCodexLimits: no directory / no events → «нет данных», no throw', () => {
+  const none = { error: 'Нет данных о лимитах Codex' };
+  assert.deepEqual(fetchCodexLimits({ codexHome: join(root, 'missing') }), none);
+  const home = join(root, 'empty');
+  session(home, '06', 'rollout-x.jsonl', [{ type: 'other' }], 2000);
+  assert.deepEqual(fetchCodexLimits({ codexHome: home }), none);
+});
+
+test('/api/limits: codex account → its own row, marked as executor, no network call', async () => {
+  const home = join(root, 'codex');
+  session(home, '06', 'rollout-new.jsonl', [rl(12, 34)], 2000);
+  const cfg = {
+    projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir: join(root, 'state'), executor: 'codex',
+    accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome: home }],
+  };
+  const seen = [];
+  srv = await startServer(cfg, { port: 0, limitsFetch: a => { seen.push(a.name); return fetchLimits({ credentialsFile, fetchImpl: fakeFetch(200, USAGE) }); } });
+  const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
+  assert.deepEqual(seen, ['основная']);
+  const row = body.accounts[1];
+  assert.equal(row.name, 'codex');
+  assert.equal(row.executor, true);
+  assert.equal(row.fiveHour.percent, 12);
+  assert.equal(row.week.percent, 34);
+  assert.equal(body.accounts[0].executor, undefined);
 });

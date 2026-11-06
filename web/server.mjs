@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
-import { fetchLimits } from './limits.mjs';
+import { fetchLimits, fetchCodexLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
 import { parsePlan, nextTask, allDone, tickStep, taskSteps, taskBodies } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
@@ -134,6 +134,9 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
     const accounts = listAccounts(cfg);
     const current = accounts.find(a => a.name === loadState(cfg.stateDir).account) ?? accounts[0];
     const rows = await Promise.all(accounts.map(async a => {
+      if (a.kind === 'codex') {
+        return { name: a.name, active: a === current, ...(cfg.executor === 'codex' ? { executor: true } : {}), ...fetchCodexLimits(a.codexHome ? { codexHome: a.codexHome } : {}) };
+      }
       const credentialsFile = a.configDir ? join(a.configDir, '.credentials.json') : undefined;
       const result = await Promise.resolve().then(() => limitsFetch({ name: a.name, configDir: a.configDir, credentialsFile }))
         .catch(() => ({ error: 'Не удалось получить лимиты' }));

@@ -233,7 +233,7 @@
   <section id="tab-limits">
     <div class="scroll">
       <div class="plan-head">
-        <div class="name">Лимиты Claude</div>
+        <div class="name">Лимиты</div>
         <button class="btn ghost" id="limits-refresh" type="button">Обновить</button>
       </div>
       <div id="limits"></div>
@@ -814,10 +814,10 @@ async function loadLimits() {
     block.append(el('div', 'lname', 'Нет данных о лимитах'), el('div', 'meta', data.error || 'Неизвестный ответ сервера'));
     return box.replaceChildren(block);
   }
-  const several = data.accounts.length > 1;
+  const several = data.accounts.length > 1 || data.accounts.some(a => a.executor);
   const blocks = [];
   for (const a of data.accounts) {
-    if (several) blocks.push(el('div', 'meta', `Учётка «${a.name}»${a.active ? ' — активная' : ''}`));
+    if (several) blocks.push(el('div', 'meta', `Учётка «${a.name}»${a.executor ? ' — исполнитель' : ''}${a.active ? ' — активная' : ''}`));
     if (a.error || !a.fiveHour || !a.week) {
       const block = el('div', 'limit');
       block.append(el('div', 'lname', 'Нет данных о лимитах'), el('div', 'meta', a.error || 'Неизвестный ответ сервера'));

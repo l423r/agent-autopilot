@@ -348,3 +348,8 @@ README.md
 - Решение: `auth` останавливает автопилот только на первой claude-учётке; codex без входа помечается в `accountAuth`, задачу продолжает Claude (уведомление «Codex не авторизован…»).
 - Решение: строка лога результата дополнена `detail` (хвост ≤200 символов) — сбой Codex без JSON виден в логе.
 - 2026-11-06 14:14 Task 5: сделано — демон выбирает исполнителя на задачу (обычная → codex, [planner] → claude, лимит/нет входа Codex → та же задача на Claude без роста попыток, одно уведомление, возврат на Codex между задачами), prompt/classify/usage по исполнителю, лог и runs.jsonl/stats с executor; npm test 436/436
+
+### Заметки Task 6
+- RED: web-limits.test — нет экспорта `fetchCodexLimits`; cli.test — в `status` нет строки «Исполнитель». GREEN: `npm test` → 441/441.
+- Решение: `fetchCodexLimits({codexHome})` (синхронная) читает до 20 самых свежих `sessions/**/*.jsonl`, берёт последнее событие `rate_limits` (`payload.rate_limits`, также `rate_limits`/`msg.rate_limits`), `resets_at` (unix с) → ISO; нет каталога/событий → `{ error: 'Нет данных о лимитах Codex' }`. `/api/limits` для `kind: codex` не ходит в сеть; строка получает `executor: true`, если `cfg.executor === 'codex'`. Заголовок вкладки «Лимиты Claude» → «Лимиты». Снимок 390 px проверен вручную (временный экземпляр).
+- 2026-11-06 14:40 Task 6: сделано — лимиты Codex из логов сессий в пульте (строка «исполнитель») и в `status` («Исполнитель: codex (5 ч: N %, неделя: M %)»), без данных — понятное сообщение; npm test 441/441

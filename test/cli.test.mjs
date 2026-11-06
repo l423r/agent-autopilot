@@ -86,6 +86,21 @@ test('status prints progress and APK line', async () => {
   assert.match(stdout, /https:\/\/expo\.dev\/x/);
 });
 
+test('status: executor codex → limits line from the sessions log; no data → понятная строка', async () => {
+  const { root, cfg } = setup();
+  const home = join(root, 'codexhome');
+  const dir = join(home, 'sessions', '2026', '11', '06');
+  mkdirSync(dir, { recursive: true });
+  const at = Math.floor(Date.now() / 1000) + 3600;
+  writeFileSync(join(dir, 'rollout-a.jsonl'), JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', rate_limits: {
+    primary: { used_percent: 12.4, window_minutes: 300, resets_at: at }, secondary: { used_percent: 40, window_minutes: 10080, resets_at: at + 1000 } } } }) + '\n');
+  const withCodex = { ...cfg, executor: 'codex', accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome: home }] };
+  writeFileSync(join(root, 'config.json'), JSON.stringify(withCodex));
+  assert.match((await exec(root, ['status'])).stdout, /Исполнитель: codex \(5 ч: 12 %, неделя: 40 %\)/);
+  writeFileSync(join(root, 'config.json'), JSON.stringify({ ...withCodex, accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome: join(root, 'none') }] }));
+  assert.match((await exec(root, ['status'])).stdout, /Исполнитель: codex \(нет данных о лимитах\)/);
+});
+
 test('status with an old config without projects prints the plan from planPath', async () => {
   const root = tempDir('ap-cli-');
   writeFileSync(join(root, 'plan.md'), PLAN);

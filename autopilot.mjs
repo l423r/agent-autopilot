@@ -19,6 +19,7 @@ import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
 import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt, samePlan } from './lib/queue.mjs';
 import { listAccounts, accountEnv } from './lib/accounts.mjs';
+import { fetchCodexLimits } from './web/limits.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -533,6 +534,7 @@ function status(cfg) {
     `Причина: ${s.reason ?? '—'}`,
     apk ? `Последний ${apk}` : 'APK: ещё не собирался',
     ...accountLines(cfg, s),
+    ...executorLines(cfg),
     ...queueBlocks(cfg),
   ].join('\n'));
 }
@@ -544,6 +546,14 @@ function accountLines(cfg, s) {
   const now = new Date();
   const limits = Object.entries(s.accountLimits ?? {}).filter(([, t]) => new Date(t) > now);
   return [`Учётка: ${s.account ?? accounts[0].name}`, ...limits.map(([name, t]) => `Лимит: ${name} до ${shortTime(t)}`)];
+}
+
+// «Исполнитель: codex (5 ч: N %, неделя: M %)» from Codex's own session logs; nothing unless executor is codex.
+function executorLines(cfg) {
+  if (cfg.executor !== 'codex') return [];
+  const codex = listAccounts(cfg).find(a => a.kind === 'codex');
+  const l = fetchCodexLimits(codex?.codexHome ? { codexHome: codex.codexHome } : {});
+  return [`Исполнитель: codex (${l.error ? 'нет данных о лимитах' : `5 ч: ${Math.round(l.fiveHour.percent)} %, неделя: ${Math.round(l.week.percent)} %`})`];
 }
 
 // --- `queue list|add|remove|up` and the queue blocks of `status` ---

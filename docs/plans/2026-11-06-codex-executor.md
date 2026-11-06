@@ -74,8 +74,8 @@
 
 **Files:** Modify `web/limits.mjs`, `web/server.mjs`, `web/index.html`, `autopilot.mjs` (`status`); Test `test/web-limits.test.mjs`
 
-- [ ] **Step 1:** Падающие тесты на временном `CODEX_HOME` с файлами сессий: берётся самое свежее событие с `rate_limits` → `{ fiveHour: { percent, resetsAt }, week: {…} }`; нет каталога/событий → `{ error: 'Нет данных о лимитах Codex' }` (Review Focus 5); `/api/limits` отдаёт строку «Codex» с пометкой «исполнитель». `npm test` → FAIL → реализация → PASS.
-- [ ] **Step 2:** `status`: строка `Исполнитель: codex (5 ч: N %, неделя: M %)`. Скриншот блока лимитов во временном экземпляре пульта в 390 px (Read). **Commit** — `feat(web): codex limits`
+- [x] **Step 1:** Падающие тесты на временном `CODEX_HOME` с файлами сессий: берётся самое свежее событие с `rate_limits` → `{ fiveHour: { percent, resetsAt }, week: {…} }`; нет каталога/событий → `{ error: 'Нет данных о лимитах Codex' }` (Review Focus 5); `/api/limits` отдаёт строку «Codex» с пометкой «исполнитель». `npm test` → FAIL → реализация → PASS.
+- [x] **Step 2:** `status`: строка `Исполнитель: codex (5 ч: N %, неделя: M %)`. Скриншот блока лимитов во временном экземпляре пульта в 390 px (Read). **Commit** — `feat(web): codex limits`
 
 ### Task 7: Проверка результата · model: sonnet
 
