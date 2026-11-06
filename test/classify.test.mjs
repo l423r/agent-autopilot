@@ -108,6 +108,18 @@ test('codex: crash without JSON → error with the output tail', () => {
   assert.ok(r.detail.endsWith("thread 'main' panicked at exec/src/lib.rs:1: boom"));
   assert.ok(r.detail.length <= 500);
 });
+test('codex: killed mid-turn — limit/auth words in the agent output are not the failure', () => {
+  const item = text => JSON.stringify({ type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: "bash -lc 'npm test'", aggregated_output: text, exit_code: 0, status: 'completed' } });
+  const head = '{"type":"thread.started","thread_id":"t"}\n{"type":"turn.started"}\n';
+  for (const words of ['ok 7 - codex: not logged in → auth\n', 'ok 8 - You\'ve hit your usage limit → limit\n']) {
+    const r = classify({ exitCode: 137, output: head + item(words) + '\n', timedOut: false }, now, cfg, 'codex');
+    assert.equal(r.kind, 'error', words);
+  }
+});
+test('codex: JSON events plus a plain-text failure line on stderr → still matched', () => {
+  const output = '{"type":"thread.started","thread_id":"t"}\nError: Not logged in. Run codex login\n';
+  assert.deepEqual(classify({ exitCode: 1, output, timedOut: false }, now, cfg, 'codex'), { kind: 'auth' });
+});
 test('codex: plain-text «Not logged in» without JSON → auth', () => {
   assert.deepEqual(classify({ exitCode: 1, output: 'Error: Not logged in. Run codex login\n', timedOut: false }, now, cfg, 'codex'), { kind: 'auth' });
 });

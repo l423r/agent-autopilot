@@ -425,3 +425,20 @@ claude/sonnet | 1 | 1 | 0 с | $0.42 | 20
 claude/по умолчанию | 1 | 1 | 0 с | $0.42 | 20
 ```
 - 2026-11-06 14:39 Task 7: сделано — npm test 441/441; ручной прогон fake-codex/fake-claude (T1 codex, T2 [planner] claude, лимит Codex на T3 → T3 и T4 на Claude без роста попыток, сдвиг сброса + resume → T5 на Codex), лог/status/stats в журнале, дефектов нет
+
+### Заметки Task 8
+- Ревьюер: субагент general-purpose, модель opus (указана явно), диапазон 9d3a9b2..9933a24, каждая строка Global Constraints и Review Focus — отдельно. Вердикт: «With fixes», Critical нет, `npm test` у ревьюера 441/441.
+- Important 1 (исправлено): `accounts` только с записью codex убирал Claude совсем — [planner] спал бесконечно, лимит/нет входа Codex не уходили на Claude. Теперь `listAccounts` без claude-учётки добавляет «основная» первой; codex с именем «основная» в таком списке — ошибка конфига. Для Task 11: запись codex можно добавлять и без явной «основная».
+- Important 2 (исправлено): при убитом посреди хода Codex (JSON есть, нет turn.failed/error) классификатор искал «not logged in»/«hit your usage limit» во всём выводе, включая вывод команд агента (имена тестов этого репо) → ложный auth/limit. Теперь при наличии JSON ищется только в не-JSON строках (stderr).
+- RED: 3 новых теста падали (accounts ×2, classify ×1). GREEN: `npm test` → 445/445.
+- minor (отложено): `decide.mjs:35`/`moveAccount` — сон до ближайшего сброса любой учётки, включая codex для [planner] → лишние пробуждения; считать только по кандидатам задачи.
+- minor (отложено): `autopilot.mjs:232` — при исчерпании и Codex, и Claude заголовок уведомления «Автопилот: лимит Claude»; в режиме codex — нейтральный.
+- minor (отложено): `web/limits.mjs:48` — по умолчанию `'/root/.codex'`, лучше `process.env.CODEX_HOME ?? join(homedir(), '.codex')`.
+- minor (отложено): `web/limits.mjs:59-71` — синхронный обход всего `sessions/` и чтение до 20 файлов на каждый `/api/limits`/`status`; обходить каталоги дат от новых и остановиться на первом событии.
+- minor (отложено): `web/limits.mjs:86`, `autopilot.mjs:552-557` — истёкший `resetsAt` показывается как текущие 100 %; показывать как сброшенный/устаревший.
+- minor (отложено): `web/limits.mjs:80` — без `secondary` вся строка «нет данных», хотя 5-часовое окно есть.
+- minor (отложено): `lib/notify.mjs:94` — уведомление «Codex не авторизован» не говорит, что после входа нужен `resume`.
+- minor (отложено): `autopilot.mjs:552` — `executor: codex` без учётки codex: `status` пишет «Исполнитель: codex», хотя всё идёт на Claude.
+- minor (отложено): `cfg.executor` не проверяется — опечатка молча означает Claude.
+- Ruling по «Declined to judge» ревьюера: нет бинарника codex (ENOENT) → обычная ошибка, не fallback — вне плана (fallback только для limit/auth), оставлено; доступ агента к auth.json при bypass-флаге — требование плана; остальное — уже зафиксированные решения.
+- 2026-11-06 14:48 Task 8: сделано — ревью свежим субагентом (opus) по Global Constraints и Review Focus; исправлены 2 Important через TDD (codex-only accounts теряли Claude; ложный auth/limit из вывода агента при падении Codex), 9 minor отложены в журнал; npm test 445/445

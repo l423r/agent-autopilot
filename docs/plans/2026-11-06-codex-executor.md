@@ -84,8 +84,8 @@
 
 ### Task 8: Ревью свежим ревьюером · model: opus
 
-- [ ] **Step 1:** По superpowers:requesting-code-review отдельный субагент-ревьюер (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 2 до HEAD; передать план с Global Constraints и Review Focus (каждую строку проверить отдельно).
-- [ ] **Step 2:** Critical и Important — исправить (тест → FAIL → PASS); Minor — в журнал `minor (отложено): …`. `npm test` → PASS. **Commit** — `fix: замечания ревью codex`
+- [x] **Step 1:** По superpowers:requesting-code-review отдельный субагент-ревьюер (инструмент Agent, самая способная модель, указать явно) на диапазон от коммита перед Task 2 до HEAD; передать план с Global Constraints и Review Focus (каждую строку проверить отдельно).
+- [x] **Step 2:** Critical и Important — исправить (тест → FAIL → PASS); Minor — в журнал `minor (отложено): …`. `npm test` → PASS. **Commit** — `fix: замечания ревью codex`
 
 ### Task 9: Финальный артефакт — документация · model: haiku
 

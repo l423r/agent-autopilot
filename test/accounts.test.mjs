@@ -112,6 +112,21 @@ test('codex account: kind codex, codexHome kept, configDir null', () => {
   assert.equal(THREE[0].kind, 'claude');
 });
 
+test('accounts with only codex: the primary Claude account is added first, Claude stays the head', () => {
+  const cfg = { executor: 'codex', accounts: [{ name: 'codex', kind: 'codex', codexHome: '/root/.codex' }] };
+  const accounts = listAccounts(cfg);
+  assert.deepEqual(accounts, [
+    { name: 'основная', kind: 'claude', configDir: null, codexHome: null },
+    { name: 'codex', kind: 'codex', configDir: null, codexHome: '/root/.codex' },
+  ]);
+  assert.deepEqual(pickExecutor(accounts, {}, PLANNER, cfg, NOW), { name: 'основная', kind: 'claude', switched: null });
+  assert.deepEqual(pickExecutor(accounts, { accountLimits: { codex: LATER } }, AUTO, cfg, NOW), { name: 'основная', kind: 'claude', switched: 'fallback' });
+});
+
+test('a codex account named like the implicit primary is a config error', () => {
+  assert.throws(() => listAccounts({ accounts: [{ name: 'основная', kind: 'codex' }] }), /accounts/);
+});
+
 test('unknown account kind is a config error', () => {
   assert.throws(() => listAccounts({ accounts: [{ name: 'x', kind: 'gpt' }] }), /accounts/);
 });
