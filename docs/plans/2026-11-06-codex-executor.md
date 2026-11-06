@@ -99,7 +99,7 @@
 
 ### Task 11: [planner] Включение · model: sonnet
 
-- [ ] **Step 1:** Сверить фикстуры Task 3 с реальным выводом `codex exec --json` (успех; событие с `rate_limits`) — расхождения исправить через TDD, `npm test` → PASS. Дождаться, пока `status` — не `running`. В `config.json`: `executor: "codex"`, запись `codex` в `accounts`, `codexModels` из журнала Task 1. Перезапустить `agent-autopilot-web` (не `agent-autopilot`: исполнитель работает внутри него). В журнал — строку `НУЖЕН ПЕРЕЗАПУСК agent-autopilot` (его делает планировщик в Task 12).
+- [x] **Step 1:** Сверить фикстуры Task 3 с реальным выводом `codex exec --json` (успех; событие с `rate_limits`) — расхождения исправить через TDD, `npm test` → PASS. Дождаться, пока `status` — не `running`. В `config.json`: `executor: "codex"`, запись `codex` в `accounts`, `codexModels` из журнала Task 1. Перезапустить `agent-autopilot-web` (не `agent-autopilot`: исполнитель работает внутри него). В журнал — строку `НУЖЕН ПЕРЕЗАПУСК agent-autopilot` (его делает планировщик в Task 12).
 
 ### Task 12: [manual] Перезапуск демона и проверка
 
