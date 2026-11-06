@@ -354,3 +354,74 @@ README.md
 - Решение: `fetchCodexLimits({codexHome})` (синхронная) читает до 20 самых свежих `sessions/**/*.jsonl`, берёт последнее событие `rate_limits` (`payload.rate_limits`, также `rate_limits`/`msg.rate_limits`), `resets_at` (unix с) → ISO; нет каталога/событий → `{ error: 'Нет данных о лимитах Codex' }`. `/api/limits` для `kind: codex` не ходит в сеть; строка получает `executor: true`, если `cfg.executor === 'codex'`. Заголовок вкладки «Лимиты Claude» → «Лимиты». Снимок 390 px проверен вручную (временный экземпляр).
 - 2026-11-06 14:40 Task 6: сделано — лимиты Codex из логов сессий в пульте (строка «исполнитель») и в `status` («Исполнитель: codex (5 ч: N %, неделя: M %)»), без данных — понятное сообщение; npm test 441/441
 - 2026-11-06 14:50 Task 7: НЕ СДЕЛАНО — `npm test` зелёный (441/441), но ручной прогон на временном stateDir (fake-codex/fake-claude, лимит Codex на 3-й задаче, сдвиг сброса, resume) не выполнен: среда запретила Bash-команду прогона (режим don't ask). Нужно от человека: разрешить запуск или выполнить прогон вручную; чекбоксы Task 7 не отмечены.
+
+### Заметки Task 7
+- `npm test` → 441/441 (pass 441, fail 0).
+- Ручной прогон: `D=$(mktemp -d)` (/tmp/ap-t7-Hm0ZtW), сценарий `bash $D/run.sh $D`: конфиг с `executor: "codex"`, учётки «основная» + codex (пустой `codexHome`), `AUTOPILOT_CONFIG` задан — systemctl не трогается; `fake-codex.sh`/`fake-claude.sh`, по одному `once` на задачу; Task 3 — `FAKE_CODEX_MODE=limit-no-time`; затем `accountLimits.codex` в state.json сдвинут в прошлое, `resume`, `once`.
+- Ruling: в плане 4 задачи, но «после сброса и resume → следующая на Codex» требует ещё одной задачи после 4-й — в прогоне план из 5 (обычная, [planner], обычная, обычная, обычная). Цена ошибки: нет, сценарий 1–4 тот же.
+- Ruling: фикстура `limit-rate-limits.jsonl` содержит `resets_at` в прошлом (окт. 2026) — для прогона взят `limit-no-time` (сброс = now + retryMinutes), иначе лимит сразу «истёк» бы.
+- Итог: исполнители по задачам T1 codex, T2 claude, T3 codex→limit→claude (попытка 1, без роста), T4 claude, T5 codex — совпадает с планом. Уведомление о переключении одно, «Вернулся на Codex» — одно, перед T5. Дефектов не найдено, Step 2 без правок (коммит `fix:` не нужен).
+- Наблюдение (не дефект): после последнего `once` статус `idle` 5/5, `done` ставит следующая итерация/`run`; `Учётка: codex` в status после возврата.
+
+#### Лог (autopilot.log)
+```
+2026-11-06T13:38:05.770Z run Task 1 (codex, попытка 1): first
+2026-11-06T13:38:05.836Z Task 1 → ok; status idle
+2026-11-06T13:38:06.055Z run Task 2 (claude/opus, попытка 1): Выкладка
+2026-11-06T13:38:06.111Z Task 2 → ok; status idle
+2026-11-06T13:38:06.430Z run Task 3 (codex/sonnet, попытка 1): third
+2026-11-06T13:38:06.492Z Task 3 → limit; status idle
+2026-11-06T13:38:06.524Z Лимит Codex до 6 нояб., 14:53, задачу делает Claude
+2026-11-06T13:38:06.693Z run Task 3 (claude/sonnet, попытка 1): third
+2026-11-06T13:38:06.722Z Task 3 → ok; status idle
+2026-11-06T13:38:06.828Z run Task 4 (claude, попытка 1): fourth
+2026-11-06T13:38:06.848Z Task 4 → ok; status idle
+2026-11-06T13:38:07.143Z resume (было: idle)
+2026-11-06T13:38:07.231Z Вернулся на Codex
+2026-11-06T13:38:07.233Z run Task 5 (codex, попытка 1): fifth
+2026-11-06T13:38:07.255Z Task 5 → ok; status idle
+```
+#### runs.jsonl (task executor model result attempt)
+```
+Task 1 codex null ok 1
+Task 2 claude opus ok 1
+Task 3 codex sonnet limit 1
+Task 3 claude sonnet ok 1
+Task 4 claude null ok 1
+Task 5 codex null ok 1
+```
+#### status до сдвига сброса
+```
+Статус: idle
+Прогресс: 4/5 задач
+Текущая задача: Task 4
+Следующая по плану: Task 5: fifth
+Следующая попытка: —
+Причина: —
+APK: ещё не собирался
+Учётка: основная
+Лимит: codex до 6 нояб., 14:53
+Исполнитель: codex (нет данных о лимитах)
+```
+#### status в конце
+```
+Статус: idle
+Прогресс: 5/5 задач
+Текущая задача: Task 5
+Следующая по плану: —
+Следующая попытка: —
+Причина: —
+APK: ещё не собирался
+Учётка: codex
+Исполнитель: codex (нет данных о лимитах)
+```
+#### stats
+```
+Модель | запусков | задача закрыта | ср. время | стоимость | вых. токены
+codex/по умолчанию | 2 | 2 | 0 с | $0.00 | 600
+claude/opus | 1 | 1 | 0 с | $0.42 | 20
+codex/sonnet | 1 | 0 | 0 с | $0.00 | 0
+claude/sonnet | 1 | 1 | 0 с | $0.42 | 20
+claude/по умолчанию | 1 | 1 | 0 с | $0.42 | 20
+```
+- 2026-11-06 14:39 Task 7: сделано — npm test 441/441; ручной прогон fake-codex/fake-claude (T1 codex, T2 [planner] claude, лимит Codex на T3 → T3 и T4 на Claude без роста попыток, сдвиг сброса + resume → T5 на Codex), лог/status/stats в журнале, дефектов нет
