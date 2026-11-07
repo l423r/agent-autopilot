@@ -82,13 +82,13 @@
 
 **Interfaces:** Produces — поля `heartbeatAt` и `run` по Global Constraints; `planTitle(markdown, path)` → строка (в `lib/plan.mjs`).
 
-- [ ] **Step 1:** Тесты (FAIL):
+- [x] **Step 1:** Тесты (FAIL):
   - каждый цикл обновляет `heartbeatAt` во всех статусах;
   - на время запуска `run` заполнен всеми полями, после — `null`, в том числе после ошибки и таймаута;
   - `lastOutputAt` двигается при выводе, но не чаще раза в 15 с;
   - `planTitle`: «# Пример X — план реализации» → «Пример X»; без заголовка → имя файла без `.md`;
   - старый `state.json` без полей читается (Review Focus 4).
-- [ ] **Step 2:** Реализовать, `npm test` → PASS. **Commit** — `feat: heartbeat and current run in state`.
+- [x] **Step 2:** Реализовать, `npm test` → PASS. **Commit** — `feat: heartbeat and current run in state`.
 
 ### Task 3: nowView и status в CLI · model: opus
 

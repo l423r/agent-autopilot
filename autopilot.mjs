@@ -4,17 +4,17 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, existsS
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { parsePlan, nextTask, allDone, taskBodies } from './lib/plan.mjs';
+import { parsePlan, nextTask, allDone, taskBodies, planTitle } from './lib/plan.mjs';
 import { classify, usageOf } from './lib/classify.mjs';
 import { decide, applyResult, resume, markRunning, preRun, STOPPED } from './lib/decide.mjs';
 import { pidRecord, livePid } from './lib/pidfile.mjs';
-import { loadState, saveState } from './lib/state.mjs';
+import { loadState, saveState, heartbeat, recordOutput } from './lib/state.mjs';
 import { promptTemplate } from './lib/prompt.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage, codexLimitMessage, codexAuthMessage, codexBackMessage } from './lib/notify.mjs';
 import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
-import { modelFor, validateModelConfig } from './lib/models.mjs';
+import { modelFor, codexModelFor, validateModelConfig } from './lib/models.mjs';
 import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
 import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor, projectByDir } from './lib/projects.mjs';
 import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt, samePlan } from './lib/queue.mjs';
@@ -164,21 +164,37 @@ async function step(cfg) {
   const model = modelFor(d.task, attempt, cfg);
   const label = executor ? [executor, model].filter(Boolean).join('/') : model;
   logEvent(cfg, `run ${d.task.id}${label ? ` (${label}, попытка ${attempt})` : ''}: ${d.task.title}`);
-  saveState(cfg.stateDir, markRunning(pre, d.task, now, model));
+  saveState(cfg.stateDir, { ...markRunning(pre, d.task, now, model), run: {
+    project: projectByDir(cfg, cfg.projectDir)?.name ?? basename(cfg.projectDir),
+    planPath: cfg.planPath,
+    planTitle: planTitle(readFileSync(resolve(cfg.projectDir, cfg.planPath), 'utf8'), cfg.planPath),
+    taskId: d.task.id, taskTitle: d.task.title,
+    done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length,
+    executor: kind, model: kind === 'codex' ? codexModelFor(model, cfg)?.model ?? null : model,
+    attempt, maxAttempts: cfg.maxAttempts,
+    startedAt: now.toISOString(), lastOutputAt: now.toISOString(),
+  } });
   commands.busy = true;
-  const template = promptTemplate(d.task, kind);
+  let raw;
   const progressBefore = readProgress(cfg);
-  cleanTmp({ dir: cfg.tmpDir ?? '/tmp', log: message => logEvent(cfg, message) });
-  const raw = await runIteration({
-    task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
-    executor: kind,
-    claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
-    codexBin: process.env.AUTOPILOT_CODEX ?? 'codex',
-    timeoutMs: cfg.iterationTimeoutMinutes * 60_000,
-    prompt: buildPrompt(template, d.task, cfg),
-    model,
-    env: accountProcessEnv(cfg, d.account),
-  });
+  try {
+    const template = promptTemplate(d.task, kind);
+    cleanTmp({ dir: cfg.tmpDir ?? '/tmp', log: message => logEvent(cfg, message) });
+    raw = await runIteration({
+      task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
+      executor: kind,
+      claudeBin: process.env.AUTOPILOT_CLAUDE ?? 'claude',
+      codexBin: process.env.AUTOPILOT_CODEX ?? 'codex',
+      timeoutMs: cfg.iterationTimeoutMinutes * 60_000,
+      prompt: buildPrompt(template, d.task, cfg),
+      model,
+      env: accountProcessEnv(cfg, d.account),
+      onOutput: () => recordOutput(cfg.stateDir),
+    });
+  } finally {
+    saveState(cfg.stateDir, { ...loadState(cfg.stateDir), run: null });
+    commands.busy = false;
+  }
   const finishedAt = new Date();
   const result = classify(raw, finishedAt, cfg, kind);
   const note = needHumanNote(progressBefore, readProgress(cfg), d.task);
@@ -192,6 +208,7 @@ async function step(cfg) {
   let next = applyResult(pre, d.task, { ...(result.kind === 'ok' && !planAfter.tasks.length ? { kind: 'error' } : result), note }, planAfter, finishedAt, cfg);
   const pauseNow = commands.pauseAfterTask && !STOPPED.includes(next.status);
   if (pauseNow) next = { ...next, status: 'paused', nextAttemptAt: null, reason: 'Пауза по команде с телефона' };
+  next = { ...next, heartbeatAt: loadState(cfg.stateDir).heartbeatAt, run: null };
   saveState(cfg.stateDir, next);
   setPauseAfterTask(cfg, false);
   commands.busy = false;
@@ -252,6 +269,7 @@ function acquireLock(cfg) {
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, async () => {
       await killOrphan(cfg.stateDir);
+      saveState(cfg.stateDir, { ...loadState(cfg.stateDir), run: null });
       process.exit(0);
     });
   }
@@ -479,42 +497,50 @@ async function waitUntil(cfg, until) {
 async function runLoop(cfg, once) {
   if (!acquireLock(cfg)) return;
   await killOrphan(cfg.stateDir);
-  removeStale(cfg.tmpBase ?? RUN_TMP_BASE, 24 * 3600e3);
-  if (!once && cfg.ntfyCommands && cfg.ntfyTopic) {
-    commands.enabled = true;
-    subscribeCommands(cfg, {
-      sinceFile: join(cfg.stateDir, 'commands.since'),
-      onMessage: msg => onCommand(cfg, msg),
-      log: s => logEvent(cfg, s),
-    });
-    logEvent(cfg, `команды с телефона: слушаю ${cfg.ntfyTopic}-cmd`);
-    if (existsSync(pauseFile(cfg))) {
-      commands.queue.push('pause');
-      logEvent(cfg, 'пауза по команде, принятая до перезапуска');
-    }
-  }
-  for (;;) {
-    await applyPendingSwitch(cfg);
-    await drainCommands(cfg);
-    recheckWaiting(cfg);
-    await followQueue(cfg);
-    const r = await step(cfg);
-    if (r === 'stop') {
-      // A queue with plans waiting for the user keeps the daemon up to see their ticks.
-      const waitsForUser = existsSync(queueFile(cfg)) && loadState(cfg.stateDir).status === 'waiting-user';
-      if (once || (!commands.enabled && !waitsForUser)) return;
-      await waitUntil(cfg, Infinity);
-      continue;
-    }
-    if (r !== 'continue') {
-      if (once) {
-        console.log(`Следующая попытка: ${r.sleepUntil.toISOString()}`);
-        return;
+  saveState(cfg.stateDir, { ...loadState(cfg.stateDir), run: null });
+  heartbeat(cfg.stateDir);
+  const heartbeatTimer = setInterval(() => heartbeat(cfg.stateDir), 60_000);
+  try {
+    removeStale(cfg.tmpBase ?? RUN_TMP_BASE, 24 * 3600e3);
+    if (!once && cfg.ntfyCommands && cfg.ntfyTopic) {
+      commands.enabled = true;
+      subscribeCommands(cfg, {
+        sinceFile: join(cfg.stateDir, 'commands.since'),
+        onMessage: msg => onCommand(cfg, msg),
+        log: s => logEvent(cfg, s),
+      });
+      logEvent(cfg, `команды с телефона: слушаю ${cfg.ntfyTopic}-cmd`);
+      if (existsSync(pauseFile(cfg))) {
+        commands.queue.push('pause');
+        logEvent(cfg, 'пауза по команде, принятая до перезапуска');
       }
-      await waitUntil(cfg, Math.max(r.sleepUntil.getTime(), Date.now() + 1000));
-      continue;
     }
-    if (once) return;
+    for (;;) {
+      await applyPendingSwitch(cfg);
+      await drainCommands(cfg);
+      recheckWaiting(cfg);
+      await followQueue(cfg);
+      heartbeat(cfg.stateDir);
+      const r = await step(cfg);
+      if (r === 'stop') {
+        // A queue with plans waiting for the user keeps the daemon up to see their ticks.
+        const waitsForUser = existsSync(queueFile(cfg)) && loadState(cfg.stateDir).status === 'waiting-user';
+        if (once || (!commands.enabled && !waitsForUser)) return;
+        await waitUntil(cfg, Infinity);
+        continue;
+      }
+      if (r !== 'continue') {
+        if (once) {
+          console.log(`Следующая попытка: ${r.sleepUntil.toISOString()}`);
+          return;
+        }
+        await waitUntil(cfg, Math.max(r.sleepUntil.getTime(), Date.now() + 1000));
+        continue;
+      }
+      if (once) return;
+    }
+  } finally {
+    clearInterval(heartbeatTimer);
   }
 }
 
