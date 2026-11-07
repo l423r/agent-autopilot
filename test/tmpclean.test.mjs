@@ -190,3 +190,33 @@ test('12-hour boundary survives filesystem sub-millisecond rounding', t => {
   assert.equal(result.removed, 0);
   assert.ok(existsSync(path));
 });
+
+test('dryRun lists only eligible candidates without deleting or logging removals', async t => {
+  const dir = fixture(t);
+  const excluded = ['systemd-private-live', '.X11-unix', '.ICE-unix', 'tmux-live', 'claude-live', 'org.chromium.live'];
+  for (const name of excluded) file(dir, name);
+  file(dir, 'fresh', new Date(now));
+  file(dir, 'boundary', new Date(now - 12 * 3600e3));
+  const candidate = file(dir, 'old');
+  const nested = join(dir, 'nested');
+  mkdirSync(nested);
+  file(nested, 'claude-profile');
+  utimesSync(nested, old, old);
+  const socket = join(dir, 'live.sock');
+  const server = createServer();
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  utimesSync(socket, old, old);
+  const before = readdirSync(dir).sort();
+  const logs = [];
+  const result = cleanTmp({ dir, now, statfs: full, dryRun: true, log: line => logs.push(line) });
+  assert.ok(existsSync(candidate), 'dryRun must preserve the eligible file');
+  assert.deepEqual(result.candidates, [candidate]);
+  assert.equal(result.removed, 0);
+  assert.equal(result.freedBytes, 0);
+  assert.deepEqual(logs, []);
+  assert.deepEqual(readdirSync(dir).sort(), before);
+  assert.equal(readFileSync(candidate, 'utf8'), 'temporary');
+  const low = cleanTmp({ dir, now, statfs: () => ({ blocks: 100, bfree: 40 }), dryRun: true });
+  assert.deepEqual(low.candidates, []);
+});

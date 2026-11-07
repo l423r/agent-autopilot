@@ -109,7 +109,7 @@
 
 ### Task 5: Проверка результата · model: sonnet
 
-- [ ] **Step 1:** `npm test` → PASS. Вручную на копии каталога состояния:
+- [x] **Step 1:** `npm test` → PASS. Вручную на копии каталога состояния:
   - `node autopilot.mjs status` при `waiting-user`, `sleeping`, `halted` — первая строка совпадает с таблицей;
   - `cleanTmp` на настоящем `/tmp` в режиме «только показать» (`dryRun: true` в вызове из `node -e`) — список кандидатов не содержит исключений.
 
