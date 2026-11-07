@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createChat } from './chat.mjs';
 import { fetchLimits, fetchCodexLimits } from './limits.mjs';
 import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
-import { parsePlan, nextTask, allDone, tickStep, taskSteps, taskBodies } from '../lib/plan.mjs';
+import { planTitle, parsePlan, nextTask, allDone, tickStep, taskSteps, taskBodies } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
 import { statusText, nowContext } from '../lib/commands.mjs';
@@ -75,7 +75,7 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       try {
         const error = projectError(project);
         if (error) return { name: project.name, error };
-        plans = listPlans(project);
+        plans = listPlans(project).map(p => ({ ...p, planTitle: planTitle(readFileSync(resolve(project.projectDir, p.planPath), 'utf8'), p.planPath) }));
       } catch (err) {
         return { name: project.name, error: err.message };
       }
@@ -89,12 +89,12 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
   const queueView = () => {
     const { items, error } = loadQueue(cfg.stateDir);
     const rows = items.map((target, i) => {
-      const row = { n: i + 1, project: projectByDir(effectiveConfig(cfg), target.projectDir)?.name ?? basename(target.projectDir), plan: target.planPath, waiting: null };
+      const row = { n: i + 1, project: projectByDir(effectiveConfig(cfg), target.projectDir)?.name ?? basename(target.projectDir), plan: target.planPath, planTitle: planTitle('', target.planPath), waiting: null };
       try {
         const markdown = readFileSync(resolve(target.projectDir, target.planPath), 'utf8');
         const plan = parsePlan(markdown);
         const next = allDone(plan) ? null : nextTask(plan);
-        Object.assign(row, { done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length });
+        Object.assign(row, { planTitle: planTitle(markdown, target.planPath), done: plan.tasks.filter(t => t.done).length, total: plan.tasks.length });
         if (next?.kind === 'user') {
           const body = taskBodies(markdown).get(next.id) ?? '';
           row.waiting = { id: next.id, title: next.title, text: body, body, steps: taskSteps(markdown, next.id) };

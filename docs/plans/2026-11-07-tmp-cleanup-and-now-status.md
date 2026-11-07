@@ -103,9 +103,9 @@
 
 **Files:** Modify `web/index.html`; Test `test/web-server.test.mjs` (разметка), снимки через Playwright.
 
-- [ ] **Step 1:** Тест (FAIL): в `index.html` есть `#now` первым в `#tab-status`, блоки «Дальше по очереди» и «Ждут тебя», шапка берёт текст из `/api/now`.
-- [ ] **Step 2:** Реализовать по Global Constraints «Пульт»: названия планов вместо имён файлов во всех списках, кнопка «Продолжить», обновление раз в 15 с. `npm test` → PASS.
-- [ ] **Step 3:** Снимки вкладки «Статус» на 360 и 390 px для `working`, `user`, `stuck`, `down` (подставные ответы `/api/now` и `/api/queue` через `page.route`) — `docs/plans/2026-11-07-now-*.png`. Просмотреть (Read): Review Focus 5. **Commit** — `feat(pult): "now" block, queue sections, header`.
+- [x] **Step 1:** Тест (FAIL): в `index.html` есть `#now` первым в `#tab-status`, блоки «Дальше по очереди» и «Ждут тебя», шапка берёт текст из `/api/now`.
+- [x] **Step 2:** Реализовать по Global Constraints «Пульт»: названия планов вместо имён файлов во всех списках, кнопка «Продолжить», обновление раз в 15 с. `npm test` → PASS.
+- [x] **Step 3:** Снимки вкладки «Статус» на 360 и 390 px для `working`, `user`, `stuck`, `down` (подставные ответы `/api/now` и `/api/queue` через `page.route`) — `docs/plans/2026-11-07-now-*.png`. Просмотреть (Read): Review Focus 5. **Commit** — `feat(pult): "now" block, queue sections, header`.
 
 ### Task 5: Проверка результата · model: sonnet
 

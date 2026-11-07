@@ -24,9 +24,10 @@
   header h1 { font-size: 20px; margin: 0; flex: 1; }
   .pill { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted);
     max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.running { background: var(--ok); } .dot.paused, .dot.sleeping { background: var(--warn); }
-  .dot.halted, .dot.auth { background: var(--bad); }
+  .dot.working { background: var(--ok); } .dot.paused, .dot.limit, .dot.user { background: var(--warn); }
+  .dot.stuck, .dot.down, .dot.auth { background: var(--bad); }
   .icon-btn { min-width: 44px; min-height: 44px; border: none; background: transparent; font-size: 22px; border-radius: 10px; }
   .icon-btn:active { background: var(--panel2); }
 
@@ -178,6 +179,12 @@
   .bar.warn > div { background: var(--warn); } .bar.bad > div { background: var(--bad); }
 
   /* Status */
+  .now { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; overflow-wrap: anywhere; }
+  .now h2 { font-size: 22px; line-height: 1.3; margin: 8px 0 12px; }
+  .now .phase { margin: 0; }
+  .now-detail { margin: 8px 0; }
+  .now .btn { margin-top: 8px; }
+
   .status-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; padding: 14px; margin: 0 0 16px; font: 15px/1.5 ui-monospace, Menlo, monospace; }
   .actions { display: flex; flex-direction: column; gap: 12px; }
@@ -242,8 +249,16 @@
 
   <section id="tab-status">
     <div class="scroll">
+      <div class="now" id="now" role="status" aria-live="polite">
+        <div class="phase">Сейчас</div>
+        <h2><span id="now-icon" aria-hidden="true"></span> <span id="now-title">Загружаю…</span></h2>
+        <div id="now-details"></div>
+        <button class="btn hidden" id="now-resume" type="button">Продолжить</button>
+      </div>
+      <div class="phase">Дальше по очереди</div>
+      <ul class="queue" id="next-queue"></ul>
       <div class="waiting hidden" id="waiting">
-        <div class="wname">Ждёт вас</div>
+        <div class="wname">Ждут тебя</div>
         <ul id="waiting-list"></ul>
       </div>
       <pre class="status-text" id="status-text">…</pre>
@@ -299,12 +314,14 @@ function showTab(name) {
 for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
 
 /* ---------- Header status ---------- */
-function setPill(state) {
-  const status = state?.status || 'unknown';
-  $('dot').className = `dot ${status}`;
-  const names = { running: 'работает', paused: 'пауза', sleeping: 'ждёт лимит', idle: 'ожидает', done: 'план выполнен',
-    halted: 'остановлен', auth: 'нужен вход', unknown: 'нет данных' };
-  $('pill-text').textContent = names[status] || status;
+function renderNow(view) {
+  $('dot').className = `dot ${view.kind}`;
+  $('pill-text').textContent = view.short;
+  $('pill').title = view.short;
+  $('now-icon').textContent = { working: '▶', limit: '⏳', user: '🙋', stuck: '⛔', paused: '⏸', idle: '💤', down: '❗', auth: '❗' }[view.kind] || '❗';
+  $('now-title').textContent = view.title;
+  $('now-details').replaceChildren(...view.details.map(text => el('p', 'now-detail', text)));
+  $('now-resume').classList.toggle('hidden', view.action !== 'resume');
 }
 
 // Makes the unchecked step boxes of a rendered [manual] task tickable. Boxes are matched to steps by
@@ -358,7 +375,9 @@ async function loadQueueView() {
   q.items.forEach(item => {
     const li = el('li', 'qrow');
     const info = el('div', 'qinfo');
-    info.append(el('div', 'qname', `${item.n}. ${item.project} / ${fileName(item.plan)}`));
+    const name = el('div', 'qname', `${item.n}. ${item.project} / ${displayPlan(item)}`);
+    name.title = item.plan;
+    info.append(name);
     info.append(el('div', 'meta', item.error ? `Ошибка: ${item.error}` : `Выполнено ${item.done} из ${item.total}${item.waiting ? ` · ждёт вас: ${item.waiting.id}` : ''}`));
     if (!item.error) info.append(progressBar(item.done, item.total, 'bar small'));
     li.append(info);
@@ -377,6 +396,17 @@ async function loadQueueView() {
   const note = $('queue-note');
   note.classList.toggle('hidden', !q.error);
   if (q.error) { note.className = 'note bad'; note.textContent = `Очередь не читается: ${q.error}`; }
+  const upcoming = q.items.filter(item => !item.waiting);
+  $('next-queue').replaceChildren(...upcoming.map(item => {
+    const li = el('li', 'qrow');
+    const info = el('div', 'qinfo');
+    const name = el('div', 'qname', `${item.project} / ${displayPlan(item)}`);
+    name.title = item.plan;
+    info.append(name, el('div', 'meta', item.error ? `Ошибка: ${item.error}` : `Выполнено ${item.done} из ${item.total}`));
+    li.append(info);
+    return li;
+  }));
+  if (!upcoming.length) $('next-queue').append(el('li', 'meta', q.error ? `Очередь не читается: ${q.error}` : 'Нет планов'));
   const wl = $('waiting-list');
   wl.replaceChildren(...q.waiting.map(w => {
     const li = el('li');
@@ -386,7 +416,8 @@ async function loadQueueView() {
     const remarks = el('button', 'btn ghost', 'Есть замечания');
     remarks.type = 'button';
     remarks.addEventListener('click', () => remarksDraft(w.project, w.waiting.id, w.waiting.title));
-    li.append(el('div', 'wplan', `${w.project} / ${fileName(w.plan)} — ${w.waiting.id}: ${w.waiting.title}`), text, el('div', 'wactions', null));
+    li.append(el('div', 'wplan', `${w.project} / ${displayPlan(w)} — ${w.waiting.id}: ${w.waiting.title}`), text, el('div', 'wactions', null));
+    li.firstChild.title = w.plan;
     li.lastChild.append(remarks);
     return li;
   }));
@@ -407,15 +438,17 @@ async function queueAct(act, item, btn) {
 }
 
 async function loadStatus() {
-  loadQueueView();
-  try {
-    const s = await api('api/status');
-    $('status-text').textContent = s.text;
-    setPill(s.state);
-  } catch (err) {
-    $('status-text').textContent = `Не удалось получить статус: ${err.message}`;
-    setPill(null);
-  }
+  await Promise.all([
+    loadQueueView(),
+    (async () => {
+      try { renderNow(await api('api/now')); }
+      catch (err) { renderNow({ kind: 'down', short: 'не отвечает', title: 'Не удалось получить статус', details: [err.message], action: null }); }
+    })(),
+    (async () => {
+      try { $('status-text').textContent = (await api('api/status')).text; }
+      catch (err) { $('status-text').textContent = `Не удалось получить статус: ${err.message}`; }
+    })(),
+  ]);
 }
 
 /* ---------- Chat ---------- */
@@ -884,6 +917,7 @@ function renderTasks(list, p, open, ctx) {
 const PROJECT_STATUS = { running: 'работает', paused: 'пауза', 'waiting-user': 'ждёт тебя', done: 'готово', halted: 'застрял',
   sleeping: 'лимит', idle: 'ожидает', auth: 'нужен вход' };
 const fileName = path => path.split('/').pop();
+const displayPlan = info => info.planTitle || fileName(info.planPath || info.plan).replace(/\.md$/i, '');
 const progressBar = (done, total, cls = 'bar') => {
   const bar = el('div', cls);
   const fill = el('div');
@@ -900,7 +934,7 @@ function planBlock(project, info, isCurrent) {
   const key = `${project.name}\n${info.planPath}`;
   const block = el('div', 'plan');
   const row = el('div', 'plan-row');
-  const toggle = el('button', 'plan-toggle', `${fileName(info.planPath)}${isCurrent ? ' · текущий' : ''}`);
+  const toggle = el('button', 'plan-toggle', `${displayPlan(info)}${isCurrent ? ' · текущий' : ''}`);
   toggle.type = 'button';
   toggle.title = info.planPath;
   toggle.append(el('div', 'meta', info.finished ? `Выполнен: ${info.done} из ${info.total}` : `Выполнено ${info.done} из ${info.total}`),
@@ -947,8 +981,9 @@ function projectCard(project) {
   if (project.active) row.append(el('span', 'badge', `в работе · ${PROJECT_STATUS[project.status] || project.status || 'нет данных'}`));
   const current = project.plans.find(p => p.planPath === project.currentPlan);
   head.append(row, el('div', 'meta', current
-    ? `${fileName(current.planPath)} — выполнено ${current.done} из ${current.total}`
-    : (project.currentPlan ? fileName(project.currentPlan) : 'Планов нет')));
+    ? `${displayPlan(current)} — выполнено ${current.done} из ${current.total}`
+    : (project.currentPlan ? displayPlan({ planPath: project.currentPlan }) : 'Планов нет')));
+  if (project.currentPlan) head.title = project.currentPlan;
   if (current) head.append(progressBar(current.done, current.total));
   const details = el('div', 'details hidden');
   head.addEventListener('click', () => {
@@ -990,7 +1025,7 @@ async function loadPlan() {
 }
 
 async function switchTo(project, info, btn) {
-  const target = `${project.name} / ${fileName(info.planPath)}`;
+  const target = `${project.name} / ${displayPlan(info)}`;
   if (!confirm(`Переключить автопилот на ${target}?`)) return;
   const note = $('switch-note');
   note.className = 'note';
@@ -1015,7 +1050,7 @@ async function command(cmd, label) {
   const note = $('cmd-note');
   note.className = 'note';
   note.textContent = 'Отправляю…';
-  for (const b of [$('pause-btn'), $('resume-btn')]) b.disabled = true;
+  for (const b of [$('pause-btn'), $('resume-btn'), $('now-resume')]) b.disabled = true;
   try {
     const r = await api('api/command', { cmd });
     if (r.warning) {
@@ -1030,10 +1065,11 @@ async function command(cmd, label) {
     note.className = 'note bad';
     note.textContent = `✗ Не удалось: ${err.message}`;
   } finally {
-    for (const b of [$('pause-btn'), $('resume-btn')]) b.disabled = false;
+    for (const b of [$('pause-btn'), $('resume-btn'), $('now-resume')]) b.disabled = false;
   }
 }
 $('pause-btn').addEventListener('click', () => command('pause', 'Пауза'));
+$('now-resume').addEventListener('click', () => command('resume', 'Продолжить'));
 $('resume-btn').addEventListener('click', () => command('resume', 'Продолжить'));
 $('status-refresh').addEventListener('click', loadStatus);
 
@@ -1046,7 +1082,7 @@ document.addEventListener('visibilitychange', () => {
   loadStatus();
   if (currentTab === 'plan') loadPlan();
 });
-setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 30_000);
+setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 15_000);
 
 loadHistory();
 connect();

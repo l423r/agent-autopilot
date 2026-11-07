@@ -231,7 +231,7 @@ test('GET /api/projects: все проекты, активный со стату
   assert.equal(alpha.projectDir, join(FIX, 'alpha'));
   assert.equal(alpha.currentPlan, 'plans/2026-02-b.md');
   assert.deepEqual(alpha.plans.map(p => p.planPath), ['plans/2026-03-empty.md', 'plans/2026-02-b.md', 'plans/2026-01-a.md']);
-  assert.deepEqual(alpha.plans[1], { planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md', done: 1, total: 3, finished: false });
+  assert.deepEqual(alpha.plans[1], { planTitle: 'B', planPath: 'plans/2026-02-b.md', progressPath: 'plans/journal.md', done: 1, total: 3, finished: false });
   assert.equal(beta.active, false);
   assert.equal(beta.status, null);
   assert.equal(beta.currentPlan, 'plans/other.md');
@@ -821,4 +821,31 @@ test('GET /api/now: sleeping keeps its active next task when queue is reordered 
     assert.equal(readFileSync(queueFile(), 'utf8'), stored, 'a GET must not edit the queue');
     assert.equal(readFileSync(join(cfg.stateDir, 'state.json'), 'utf8'), stateBefore, 'a GET must not edit state');
   }
+});
+
+test('panel markup: now comes first, queue sections and API header', () => {
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  assert.match(html, /<section id="tab-status">\s*<div class="scroll">\s*<div[^>]*id="now"/);
+  assert.match(html, /Дальше по очереди/);
+  assert.match(html, /Ждут тебя/);
+  assert.match(html, /api\('api\/now'\)/);
+  assert.match(html, /\$\('pill-text'\)\.textContent = \w+\.short/);
+  assert.match(html, /setInterval\([\s\S]*visibilityState === 'visible'[\s\S]*15_000\)/);
+});
+
+const panelFixtureBefore = readFileSync(join(FIX, 'alpha', 'plans', '2026-02-b.md'), 'utf8');
+
+test('panel APIs provide plan titles for queue and project cards', async () => {
+  cfg.projects = [{ name: 'demo', projectDir: root, plansDir: '.' }];
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(root, 'plan.md'), '# Читаемый план — план реализации\n### Task 1: Код\n- [ ] s\n');
+  writeFileSync(queueFile(), JSON.stringify([{ projectDir: root, planPath: 'plan.md' }]));
+  await start();
+  assert.equal((await json(await get('/api/queue'))).items[0].planTitle, 'Читаемый план');
+  const projects = await json(await get('/api/projects'));
+  assert.equal(projects.find(p => p.name === 'demo').plans.find(p => p.planPath === 'plan.md').planTitle, 'Читаемый план');
+});
+
+test('panel API tests leave shared plan fixtures unchanged', () => {
+  assert.equal(readFileSync(join(FIX, 'alpha', 'plans', '2026-02-b.md'), 'utf8'), panelFixtureBefore);
 });
