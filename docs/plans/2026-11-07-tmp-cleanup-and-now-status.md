@@ -70,11 +70,11 @@
 - `runTmpDir(base, stamp, taskId)` → путь;
 - `removeStale(base, maxAgeMs)`.
 
-- [ ] **Step 1:** Тесты (FAIL):
+- [x] **Step 1:** Тесты (FAIL):
   - во временном каталоге-фикстуре с поддельным `statfs` (75% занято) удаляются старые записи и не трогаются исключения из Global Constraints, свежие и сокет; при 60% не удаляется ничего;
   - запись без прав (`chmod 000` у родителя вложенной папки) → `skipped`, исключения нет (Review Focus 2);
   - runner с поддельным исполнителем (`test/fixtures`) видит `TMPDIR` внутри `/var/tmp/autopilot/` (в тесте — подменённая база). После выхода каталога нет: и при обычном выходе, и при таймауте с убийством группы (Review Focus 1).
-- [ ] **Step 2:** Реализовать. `cleanTmp` вызывается в демоне перед каждым запуском задачи, `removeStale` — при старте демона. `npm test` → PASS. **Commit** — `feat: per-run TMPDIR and /tmp cleanup before tasks`.
+- [x] **Step 2:** Реализовать. `cleanTmp` вызывается в демоне перед каждым запуском задачи, `removeStale` — при старте демона. `npm test` → PASS. **Commit** — `feat: per-run TMPDIR and /tmp cleanup before tasks`.
 
 ### Task 2: Сердцебиение и описание запуска в state.json · model: sonnet
 

@@ -20,6 +20,7 @@ import { effectiveConfig, takeSwitch, applySwitch, queueSwitch, progressPathFor,
 import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt, samePlan } from './lib/queue.mjs';
 import { listAccounts, accountEnv } from './lib/accounts.mjs';
 import { fetchCodexLimits } from './web/limits.mjs';
+import { cleanTmp, removeStale, RUN_TMP_BASE } from './lib/tmpclean.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE = 'agent-autopilot';
@@ -167,6 +168,7 @@ async function step(cfg) {
   commands.busy = true;
   const template = promptTemplate(d.task, kind);
   const progressBefore = readProgress(cfg);
+  cleanTmp({ dir: cfg.tmpDir ?? '/tmp', log: message => logEvent(cfg, message) });
   const raw = await runIteration({
     task: d.task, cfg, stateDir: cfg.stateDir, logDir: cfg.logDir,
     executor: kind,
@@ -477,6 +479,7 @@ async function waitUntil(cfg, until) {
 async function runLoop(cfg, once) {
   if (!acquireLock(cfg)) return;
   await killOrphan(cfg.stateDir);
+  removeStale(cfg.tmpBase ?? RUN_TMP_BASE, 24 * 3600e3);
   if (!once && cfg.ntfyCommands && cfg.ntfyTopic) {
     commands.enabled = true;
     subscribeCommands(cfg, {

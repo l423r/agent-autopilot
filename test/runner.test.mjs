@@ -118,3 +118,56 @@ test('CODEX_HOME reaches the codex process only; codex gets no CLAUDE_CONFIG_DIR
     for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });
+
+const fakeTmp = fileURLToPath(new URL('./fixtures/fake-tmp.mjs', import.meta.url));
+for (const executor of ['claude', 'codex']) {
+  for (const mode of ['ok', 'error', 'signal', 'timeout']) {
+    test(`${executor}: private TMPDIR is removed after ${mode}`, async () => {
+      const { cfg, stateDir, logDir } = setup();
+      cfg.tmpBase = join(cfg.projectDir, 'run-tmp');
+      const r = await runIteration({
+        task, cfg, stateDir, logDir, executor, claudeBin: fakeTmp, codexBin: fakeTmp,
+        timeoutMs: mode === 'timeout' ? 1000 : 10_000,
+        env: { TMPDIR: cfg.projectDir, FAKE_TMP_HANG: mode === 'timeout' ? '1' : '', FAKE_TMP_SIGNAL: mode === 'signal' ? '1' : '', FAKE_TMP_ERROR: mode === 'error' ? '1' : '' },
+      });
+      const { tmp, dir } = JSON.parse(r.output.split('\n')[0]);
+      assert.ok(tmp.startsWith(cfg.tmpBase + '/'), tmp);
+      assert.ok(dir.startsWith(tmp + '/'));
+      assert.equal(existsSync(tmp), false);
+      assert.equal(existsSync(join(stateDir, 'child.pid')), false);
+      assert.equal(r.timedOut, mode === 'timeout');
+      if (mode === 'ok' || mode === 'error') assert.equal(r.exitCode, mode === 'ok' ? 0 : 1);
+      if (mode === 'timeout') {
+        const { childPid } = JSON.parse(r.output.split('\n')[1]);
+        // A killed grandchild can briefly remain a zombie until init reaps it.
+        const { readFileSync } = await import('node:fs');
+        if (alive(childPid)) assert.equal(readFileSync(`/proc/${childPid}/stat`, 'utf8').split(' ')[2], 'Z');
+      }
+    });
+  }
+}
+
+test('spawn failure also removes private TMPDIR', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  cfg.tmpBase = join(cfg.projectDir, 'run-tmp');
+  const r = await runIteration({ task, cfg, stateDir, logDir, claudeBin: '/missing/executor', timeoutMs: 1000 });
+  assert.match(r.output, /spawn error/);
+  assert.deepEqual(readdirSync(cfg.tmpBase), []);
+});
+
+test('pid record failure stops the spawned process and removes its TMPDIR', async () => {
+  const { cfg, stateDir, logDir } = setup();
+  const { mkdirSync } = await import('node:fs');
+  cfg.tmpBase = join(cfg.projectDir, 'run-tmp');
+  mkdirSync(join(stateDir, 'child.pid'), { recursive: true });
+  await assert.rejects(async () => runIteration({ task, cfg, stateDir, logDir, claudeBin: fake, timeoutMs: 1000 }), { code: 'EISDIR' });
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(readdirSync(cfg.tmpBase), []);
+});
+
+test('TMPDIR fixture leaves no artifacts when discovered by node --test', async () => {
+  const root = tempDir('ap-fixture-');
+  const { execFileSync } = await import('node:child_process');
+  execFileSync(fakeTmp, [], { env: { ...process.env, TMPDIR: root } });
+  assert.deepEqual(readdirSync(root), []);
+});
