@@ -117,7 +117,7 @@
 
 ### Task 6: [planner] Правило systemd-tmpfiles и перезапуск пульта · model: sonnet
 
-- [ ] **Step 1:** Создать `/etc/tmpfiles.d/autopilot-tmp.conf`:
+- [x] **Step 1:** Создать `/etc/tmpfiles.d/autopilot-tmp.conf`:
   ```
   # /tmp живёт в памяти: записи старше суток удаляются (исключения — как в lib/tmpclean.mjs)
   e /tmp - - - 1d
@@ -129,7 +129,7 @@
   e /var/tmp/autopilot - - - 1d
   ```
   Сначала `systemd-tmpfiles --cat-config | grep -n ' /tmp '`: если у `/tmp` уже есть строка (например, в `/usr/lib/tmpfiles.d/tmp.conf`), дубль путей systemd-tmpfiles игнорирует — тогда вместо `e /tmp` положить `/etc/tmpfiles.d/tmp.conf` (копия системного с возрастом `1d`; одноимённый файл в `/etc` заменяет системный), а `x`-строки и `/var/tmp/autopilot` оставить в `autopilot-tmp.conf`. Затем `systemd-tmpfiles --clean --dry-run 2>&1 | head` (если флаг не поддерживается — `systemd-tmpfiles --cat-config | grep autopilot-tmp`) — правило прочитано без ошибок. `systemctl list-timers systemd-tmpfiles-clean.timer` — таймер активен. При ошибке файл удалить.
-- [ ] **Step 2:** `systemctl restart agent-autopilot-web`. Затем `curl -s localhost:<порт пульта>/api/now` → JSON с `kind`. В журнал, коммит.
+- [x] **Step 2:** `systemctl restart agent-autopilot-web`. Затем `curl -s localhost:<порт пульта>/api/now` → JSON с `kind`. В журнал, коммит.
 
 ### Task 7: Ревью свежим ревьюером · model: opus
 
