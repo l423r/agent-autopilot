@@ -13,7 +13,8 @@ import { MAX_UPLOAD, saveUpload } from './uploads.mjs';
 import { parsePlan, nextTask, allDone, tickStep, taskSteps, taskBodies } from '../lib/plan.mjs';
 import { loadState } from '../lib/state.mjs';
 import { listAccounts, accountEnv as accountEnv_ } from '../lib/accounts.mjs';
-import { statusText } from '../lib/commands.mjs';
+import { statusText, nowContext } from '../lib/commands.mjs';
+import { nowView, nowShort } from '../lib/now.mjs';
 import { killOrphan } from '../lib/runner.mjs';
 import { effectiveConfig, listProjects, listPlans, findPlan, requestSwitch, queueSwitch, projectByDir, mentionContext, projectError } from '../lib/projects.mjs';
 import { loadQueue, saveQueue, removeAt, moveUp } from '../lib/queue.mjs';
@@ -235,11 +236,18 @@ export async function startServer(cfg, { port = cfg.webPort ?? 7690, claudeBin, 
       sendJson(res, 200, { path, markdown, tasks, done: tasks.filter(t => t.done).length, total: tasks.length });
     },
 
+    'GET /api/now': (req, res) => {
+      const context = nowContext(cfg, loadState(cfg.stateDir));
+      const current = nowView(context);
+      sendJson(res, 200, { ...current, short: nowShort(current, context.state) });
+    },
+
     'GET /api/status': (req, res) => {
       const state = loadState(cfg.stateDir);
       let plan;
       try { plan = parsePlan(readPlanText().markdown); } catch { plan = { tasks: [] }; }
-      sendJson(res, 200, { text: statusText(state, plan), state });
+      const context = nowContext(cfg, state);
+      sendJson(res, 200, { text: statusText(context.state, plan, context), state });
     },
 
     'GET /api/queue': (req, res) => sendJson(res, 200, queueView()),

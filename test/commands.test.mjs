@@ -89,7 +89,7 @@ test('statusText shows progress and next task', () => {
   assert.match(text, /Task 4/);
   assert.match(text, /2026-10-21T15:00/);
   const lines = text.split('\n').length;
-  assert.ok(lines >= 2 && lines <= 4, `lines: ${lines}`);
+  assert.ok(lines >= 4 && lines <= 6, `lines: ${lines}`);
 });
 
 test('statusText: модель текущей задачи', () => {
@@ -97,4 +97,14 @@ test('statusText: модель текущей задачи', () => {
   const running = { ...idle, status: 'running', currentTask: 'Task 4' };
   assert.match(statusText({ ...running, currentModel: 'sonnet' }, plan), /^Текущая задача: Task 4 \(sonnet\)$/m);
   assert.match(statusText(running, plan), /^Текущая задача: Task 4$/m);
+});
+
+test('statusText starts with now title and details, then retains the old summary', () => {
+  const now = new Date('2026-11-08T12:00:00Z');
+  const plan = parsePlan('### Task 3: статус\n- [ ] s');
+  const state = { status: 'paused', heartbeatAt: now.toISOString() };
+  assert.equal(statusText(state, plan, { now }), [
+    'На паузе', 'Продолжит после кнопки «Продолжить»', 'Статус: paused',
+    'Прогресс: 0/1', 'Следующая задача: Task 3: статус',
+  ].join('\n'));
 });

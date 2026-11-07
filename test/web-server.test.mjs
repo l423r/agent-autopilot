@@ -755,3 +755,70 @@ test('POST /api/tick: разные шаги параллельно — оба о
   assert.equal(planText(dir), TICK_PLAN.replace('- [ ] **Step 2:**', '- [x] **Step 2:**').replace('- [ ] **Step 3:**', '- [x] **Step 3:**'));
   assert.equal(commits(dir), '3');
 });
+
+test('GET /api/now: legacy state gives down and the exact response shape', async () => {
+  await start();
+  const res = await get('/api/now');
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), {
+    kind: 'down', title: 'Автопилот не отвечает с —',
+    details: ['Служба остановлена или зависла. Напиши планировщику «проверь автопилот».'],
+    action: null, short: 'не отвечает',
+  });
+});
+
+test('GET /api/now: queue titles and active plan are read afresh, missing plans tolerated', async () => {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  const target = { projectDir: root, planPath: 'manual.md' };
+  cfg.projects = [{ name: 'demo', projectDir: root, plansDir: '.' }];
+  writeFileSync(join(root, 'manual.md'), '# Ручной план — план реализации\n### Task 7: [manual] Проверить\n- [ ] s\n');
+  writeFileSync(queueFile(), JSON.stringify([target, { projectDir: root, planPath: 'missing.md' }]));
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'waiting-user', heartbeatAt: new Date().toISOString() }));
+  await start();
+  let got = await json(await get('/api/now'));
+  assert.equal(got.kind, 'user');
+  assert.equal(got.title, 'Ничего не делает: все планы в очереди ждут тебя (1)');
+  assert.deepEqual(got.details, ['demo — «Ручной план», Task 7: Проверить']);
+  assert.equal(got.short, 'ждёт тебя (1)');
+  writeFileSync(join(root, 'manual.md'), '# Новое имя\n### Task 7: [manual] Проверить\n- [ ] s\n');
+  assert.deepEqual((await json(await get('/api/now'))).details, ['demo — «Новое имя», Task 7: Проверить']);
+  writeFileSync(join(cfg.stateDir, 'active.json'), JSON.stringify(target));
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'halted', currentTask: 'Task 7', reason: 'ошибка', heartbeatAt: new Date().toISOString() }));
+  got = await json(await get('/api/now'));
+  assert.deepEqual(got, { kind: 'stuck', title: 'Остановился: ошибка', details: ['Задача Task 7 в «Новое имя»'], action: 'resume', short: 'остановился' });
+});
+
+test('GET /api/now: active sleeping plan without queue.json and title fallback', async () => {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  cfg.projects = [{ name: 'demo', projectDir: root, plansDir: '.' }];
+  writeFileSync(join(root, 'second.md'), '### Task 4: продолжить\n- [ ] s\n');
+  writeFileSync(join(cfg.stateDir, 'active.json'), JSON.stringify({ projectDir: root, planPath: 'second.md' }));
+  const until = new Date();
+  until.setHours(23, 59, 0, 0);
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'sleeping', heartbeatAt: new Date().toISOString(), nextAttemptAt: until.toISOString() }));
+  await start();
+  assert.deepEqual(await json(await get('/api/now')), {
+    kind: 'limit', title: 'Ждёт лимит до 23:59, дальше продолжит сам',
+    details: ['Следующая: demo — Task 4: продолжить'], action: null, short: 'ждёт лимит до 23:59',
+  });
+});
+
+test('GET /api/now: sleeping keeps its active next task when queue is reordered or active is removed', async () => {
+  mkdirSync(cfg.stateDir, { recursive: true });
+  cfg.projects = [{ name: 'demo', projectDir: root, plansDir: '.' }];
+  writeFileSync(join(root, 'plan.md'), '# Текущий\n### Task 3: продолжить текущее\n- [ ] s\n');
+  writeFileSync(join(root, 'other.md'), '# Другой\n### Task 9: чужая задача\n- [ ] s\n');
+  writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status: 'sleeping', heartbeatAt: new Date().toISOString(), nextAttemptAt: new Date(Date.now() + 60000).toISOString() }));
+  const current = { projectDir: root, planPath: 'plan.md' };
+  const other = { projectDir: root, planPath: 'other.md' };
+  const stateBefore = readFileSync(join(cfg.stateDir, 'state.json'), 'utf8');
+  await start();
+  for (const queue of [[other, current], [other], []]) {
+    const stored = JSON.stringify(queue);
+    writeFileSync(queueFile(), stored);
+    const got = await json(await get('/api/now'));
+    assert.deepEqual(got.details, ['Следующая: demo — Task 3: продолжить текущее']);
+    assert.equal(readFileSync(queueFile(), 'utf8'), stored, 'a GET must not edit the queue');
+    assert.equal(readFileSync(join(cfg.stateDir, 'state.json'), 'utf8'), stateBefore, 'a GET must not edit state');
+  }
+});

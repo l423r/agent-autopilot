@@ -1309,3 +1309,22 @@ test('codex: a crash without JSON is an ordinary error with the output tail in t
   assert.equal(s.attempts['Task 1'], 1);
   assert.match(c.log(), /Task 1 → error.*panicked at exec/);
 });
+
+test('status CLI starts with now title/details for waiting-user, sleeping, halted and legacy state', async () => {
+  const { root, cfg } = setup();
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(root, 'plan.md'), '# Понятный план — план реализации\n### Task 2: [manual] Проверить\n- [ ] s\n');
+  const project = root.split('/').at(-1);
+  for (const [status, extra, expected] of [
+    ['waiting-user', {}, `Ничего не делает: все планы в очереди ждут тебя (1)\n${project} — «Понятный план», Task 2: Проверить\n`],
+    ['sleeping', { nextAttemptAt: '2099-01-01T13:05:00Z' }, 'Ждёт лимит до 1 янв., 13:05, дальше продолжит сам\n'],
+    ['halted', { currentTask: 'Task 2', reason: 'ошибка' }, 'Остановился: ошибка\nЗадача Task 2 в «Понятный план»\n'],
+    ['running', { heartbeatAt: undefined }, 'Автопилот не отвечает с —\nСлужба остановлена или зависла. Напиши планировщику «проверь автопилот».\n'],
+  ]) {
+    writeFileSync(join(cfg.stateDir, 'state.json'), JSON.stringify({ status, heartbeatAt: new Date().toISOString(), ...extra }));
+    const { stdout } = await exec(root, ['status']);
+    assert.ok(stdout.startsWith(expected), stdout);
+    assert.match(stdout, /Статус:/);
+    assert.match(stdout, /Прогресс:/);
+  }
+});

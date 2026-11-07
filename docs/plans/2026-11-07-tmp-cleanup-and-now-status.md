@@ -96,8 +96,8 @@
 
 **Interfaces:** Consumes — Task 2. Produces — `nowView({ state, queue, now })` по таблице Global Constraints; `GET /api/now` → `{ kind, title, details, action, short }`, где `short` — текст для шапки.
 
-- [ ] **Step 1:** Тесты (FAIL): каждая строка таблицы, тексты дословно; предупреждение «Давно нет вывода» на 10 мин 1 с и его отсутствие на 9 мин 59 с; Review Focus 3 и 4; время другой даты — `7 нояб., ЧЧ:ММ`; `statusText` начинается с `title`.
-- [ ] **Step 2:** Реализовать, `npm test` → PASS. **Commit** — `feat: one-line "now" status for panel and CLI`.
+- [x] **Step 1:** Тесты (FAIL): каждая строка таблицы, тексты дословно; предупреждение «Давно нет вывода» на 10 мин 1 с и его отсутствие на 9 мин 59 с; Review Focus 3 и 4; время другой даты — `7 нояб., ЧЧ:ММ`; `statusText` начинается с `title`.
+- [x] **Step 2:** Реализовать, `npm test` → PASS. **Commit** — `feat: one-line "now" status for panel and CLI`.
 
 ### Task 4: Блок «Сейчас», очередь и шапка в пульте · model: sonnet
 

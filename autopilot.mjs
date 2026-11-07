@@ -12,7 +12,8 @@ import { loadState, saveState, heartbeat, recordOutput } from './lib/state.mjs';
 import { promptTemplate } from './lib/prompt.mjs';
 import { buildPrompt, runIteration, killOrphan } from './lib/runner.mjs';
 import { notify, stopMessage, buttonsFor, waitingMessage, planDoneMessage, planMissingMessage, switchedMessage, codexLimitMessage, codexAuthMessage, codexBackMessage } from './lib/notify.mjs';
-import { parseCommand, applyCommand, statusText } from './lib/commands.mjs';
+import { parseCommand, applyCommand, statusText, nowContext } from './lib/commands.mjs';
+import { nowView } from './lib/now.mjs';
 import { subscribeCommands } from './lib/listen.mjs';
 import { modelFor, codexModelFor, validateModelConfig } from './lib/models.mjs';
 import { appendRun, runsFile, summarizeRuns, statsText } from './lib/runs.mjs';
@@ -279,7 +280,8 @@ function acquireLock(cfg) {
 function summary(cfg) {
   const s = loadState(cfg.stateDir);
   try {
-    return statusText(s, readPlan(cfg));
+    const context = nowContext(cfg, s);
+    return statusText(context.state, readPlan(cfg), context);
   } catch (err) {
     return `Статус: ${s.status}\nПлан не читается: ${err.message}`;
   }
@@ -546,6 +548,7 @@ async function runLoop(cfg, once) {
 
 function status(cfg) {
   const s = loadState(cfg.stateDir);
+  const current = nowView(nowContext(cfg, s));
   const plan = readPlan(cfg);
   const done = plan.tasks.filter(t => t.done).length;
   const next = nextTask(plan);
@@ -555,6 +558,7 @@ function status(cfg) {
     apk = lines.at(-1)?.trim() ?? null;
   } catch { /* no progress file yet */ }
   console.log([
+    current.title, ...current.details,
     `Статус: ${s.status}`,
     `Прогресс: ${done}/${plan.tasks.length} задач`,
     `Текущая задача: ${s.currentTask ?? '—'}`,
