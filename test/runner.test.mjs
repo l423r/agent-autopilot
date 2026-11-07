@@ -171,3 +171,34 @@ test('TMPDIR fixture leaves no artifacts when discovered by node --test', async 
   execFileSync(fakeTmp, [], { env: { ...process.env, TMPDIR: root } });
   assert.deepEqual(readdirSync(root), []);
 });
+
+for (const executor of ['claude', 'codex']) {
+  for (const mode of ['timeout', 'group signal', 'graceful group signal']) {
+    test(`${executor}: ${mode} stops a stubborn descendant with closed output before returning`, async () => {
+      const { cfg, stateDir, logDir } = setup();
+      cfg.tmpBase = join(cfg.projectDir, 'run-tmp');
+      let childPid;
+      try {
+        const r = await runIteration({
+          task, cfg, stateDir, logDir, executor, claudeBin: fakeTmp, codexBin: fakeTmp,
+          timeoutMs: 1000, env: { FAKE_TMP_HANG: '1', FAKE_TMP_STUBBORN: '1', FAKE_TMP_GROUP_SIGNAL: mode !== 'timeout' ? '1' : '', FAKE_TMP_GRACEFUL: mode === 'graceful group signal' ? '1' : '' },
+        });
+        childPid = JSON.parse(r.output.split('\n')[1]).childPid;
+        assert.equal(r.timedOut, mode === 'timeout');
+        if (mode === 'graceful group signal') assert.equal(r.exitCode, 0);
+        const { readFileSync } = await import('node:fs');
+        const executing = () => {
+          try { return readFileSync(`/proc/${childPid}/stat`, 'utf8').split(' ')[2] !== 'Z'; }
+          catch (err) { if (err.code === 'ENOENT') return false; throw err; }
+        };
+        // Let the kernel deliver SIGKILL; do not wait for the former 10-second unref timer.
+        const deadline = Date.now() + 500;
+        while (executing() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+        assert.equal(executing(), false, 'descendant still executing after runner returned');
+        assert.deepEqual(readdirSync(cfg.tmpBase), []);
+      } finally {
+        if (childPid) { try { process.kill(childPid, 'SIGKILL'); } catch {} }
+      }
+    });
+  }
+}

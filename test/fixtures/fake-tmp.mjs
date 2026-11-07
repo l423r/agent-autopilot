@@ -15,8 +15,17 @@ if (process.argv.length > 2) {
     utimesSync(process.env.FAKE_CLEAN_CANDIDATE, old, old);
   }
   if (process.env.FAKE_TMP_HANG) {
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
-    console.log(JSON.stringify({ childPid: child.pid }));
+    const stubborn = process.env.FAKE_TMP_STUBBORN;
+    if (process.env.FAKE_TMP_GRACEFUL) process.on('SIGTERM', () => process.exit(0));
+    const child = spawn(process.execPath, ['-e', stubborn
+      ? 'process.on("SIGTERM", () => {}); process.send("ready"); setInterval(() => {}, 1000)'
+      : 'setInterval(() => {}, 1000)'], { stdio: stubborn ? ['ignore', 'ignore', 'ignore', 'ipc'] : 'inherit' });
+    if (stubborn) child.once('message', () => {
+      console.log(JSON.stringify({ childPid: child.pid }));
+      child.disconnect();
+      if (process.env.FAKE_TMP_GROUP_SIGNAL) setTimeout(() => process.kill(-process.pid, 'SIGTERM'), 20);
+    });
+    else console.log(JSON.stringify({ childPid: child.pid }));
     setInterval(() => {}, 1000);
   } else if (process.env.FAKE_TMP_SIGNAL) {
     process.kill(-process.pid, 'SIGTERM');
