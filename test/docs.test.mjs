@@ -58,3 +58,21 @@ test('README has the spare-account section with its setup, login and status line
     assert.ok(section.includes(must), `в разделе нет «${must}»`);
   }
 });
+
+test('README documents the current status view and temporary-file cleanup', () => {
+  const readme = read('README.md');
+  const now = readme.split('\n## ').find(s => s.startsWith('Что сейчас делает автопилот'));
+  assert.ok(now, 'нет раздела «Что сейчас делает автопилот»');
+  for (const must of [
+    'Сейчас', 'heartbeatAt', 'run', 'Работает:', 'Ждёт лимит', 'Ждёт тебя',
+    'Остановился:', 'На паузе', 'Не отвечает', 'очередь пуста', 'все планы в очереди ждут тебя', 'Нужен вход',
+  ]) {
+    assert.ok(now.includes(must), `в разделе «Сейчас» нет «${must}»`);
+  }
+
+  const tmp = readme.split('\n## ').find(s => s.startsWith('Временные файлы'));
+  assert.ok(tmp, 'нет раздела «Временные файлы»');
+  for (const must of ['/var/tmp/autopilot/<stamp>-<taskId>', 'TMPDIR', '/tmp', '70%', '12 ч', 'systemd-tmpfiles', '1d']) {
+    assert.ok(tmp.includes(must), `в разделе «Временные файлы» нет «${must}»`);
+  }
+});

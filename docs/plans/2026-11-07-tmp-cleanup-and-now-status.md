@@ -137,7 +137,7 @@
 
 ### Task 8: Финальный артефакт — документация · model: haiku
 
-- [ ] **Step 1:** README: раздел «Что сейчас делает автопилот» — блок «Сейчас», его варианты из таблицы, поля `heartbeatAt`/`run`; раздел «Временные файлы» — `TMPDIR` запуска, очистка `/tmp`, правило tmpfiles. `npm test` (`docs.test.mjs`) → PASS. **Commit** — `docs: now-status and tmp cleanup`.
+- [x] **Step 1:** README: раздел «Что сейчас делает автопилот» — блок «Сейчас», его варианты из таблицы, поля `heartbeatAt`/`run`; раздел «Временные файлы» — `TMPDIR` запуска, очистка `/tmp`, правило tmpfiles. `npm test` (`docs.test.mjs`) → PASS. **Commit** — `docs: now-status and tmp cleanup`.
 
 ### Task 9: [manual] Перезапуск демона и проверка с телефона
 
