@@ -49,7 +49,7 @@
   - шапка: точка цвета `kind` и короткий текст — `работает · <project> <taskId>`, `ждёт лимит до ЧЧ:ММ`, `ждёт тебя (N)`, `остановился`, `пауза`, `не отвечает`, `очередь пуста`;
   - обновление — каждые 15 с, пока вкладка видима.
 - `node autopilot.mjs status` — первые строки: `title` и `details` из `nowView`, дальше как сейчас.
-- Не перезапускать службы `agent-autopilot` и `agent-autopilot-web` в обычных задачах (исполнитель работает внутри демона); перезапуск — только Tasks 6, 10 и 11. `git push` в задачах не делать. Журнал — `docs/plans/2026-11-07-tmp-cleanup-and-now-status.progress.md`. Автор коммитов — L423R.
+- Не перезапускать службы `agent-autopilot` и `agent-autopilot-web` в обычных задачах (исполнитель работает внутри демона); перезапуск — только Tasks 6, 11 и 12. `git push` в задачах не делать. Журнал — `docs/plans/2026-11-07-tmp-cleanup-and-now-status.progress.md`. Автор коммитов — L423R.
 
 ## Review Focus
 
@@ -153,11 +153,24 @@
   - `POST /api/tick` для записи очереди со старым абсолютным путём → `ok`.
 - [x] **Step 2:** Реализовать (`path.relative` от `projectDir` при добавлении и при чтении старых записей), `npm test` → PASS. **Commit** — `fix: queue stores plan paths relative to the project`.
 
-### Task 10: [planner] Перезапуск пульта после правки очереди · model: sonnet
+### Task 10: Лимиты Codex после сброса окна · model: sonnet
+
+Найдено 2026-11-08: пульт и `status` показывают `used_percent` из последнего файла сессии Codex, даже если `resets_at` этого окна уже прошёл. Вчера после сброса в 14:23 до вечера висело «5 ч: 100 %», хотя у пользователя в Codex лимит был свободен. Значение обновлялось только со следующим запуском Codex.
+
+**Files:** Modify `web/limits.mjs` (разбор окон Codex и Claude), `lib/accounts.mjs` (если выбор исполнителя читает те же проценты); Test `test/web-limits.test.mjs`, `test/accounts.test.mjs`.
+
+- [ ] **Step 1:** Тесты (FAIL):
+  - окно с `resets_at` в прошлом → `{ percent: 0, resetsAt: null, reset: true }`, в пульте «сброшен»;
+  - окно с `resets_at` в будущем → как раньше;
+  - выбор исполнителя не считает Codex «в лимите», если время сброса из лимита уже прошло;
+  - то же для окон Claude.
+- [ ] **Step 2:** Реализовать (сравнение с `now`, передаваемым в функцию), `npm test` → PASS. **Commit** — `fix: limits after window reset show as free`.
+
+### Task 11: [planner] Перезапуск пульта после правки очереди и лимитов · model: sonnet
 
 - [ ] **Step 1:** `systemctl restart agent-autopilot-web`. Затем `curl -s -X POST localhost:7690/api/tick` с `project`, абсолютным `plan` текущего ожидающего плана и несуществующей задачей `Task 99` → ответ не «План не найден». Итог — в журнал, коммит.
 
-### Task 11: [manual] Перезапуск демона и проверка с телефона
+### Task 12: [manual] Перезапуск демона и проверка с телефона
 
 - [x] Планировщик в чате пульта, когда автопилот **не** в состоянии `running` (`node autopilot.mjs status`): `systemctl restart agent-autopilot`; через минуту `state.json` содержит `heartbeatAt`, `/api/now` не `down`. Итог — пользователю и в журнал; шаг отмечает планировщик.
 - [ ] Ты: открыть пульт → «Статус». Всё ок, если первой строкой сразу понятно, работает ли автопилот и над чем (проект, план, задача), а в шапке видно то же коротко.
