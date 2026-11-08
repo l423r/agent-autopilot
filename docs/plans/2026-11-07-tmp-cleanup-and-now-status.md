@@ -49,7 +49,7 @@
   - шапка: точка цвета `kind` и короткий текст — `работает · <project> <taskId>`, `ждёт лимит до ЧЧ:ММ`, `ждёт тебя (N)`, `остановился`, `пауза`, `не отвечает`, `очередь пуста`;
   - обновление — каждые 15 с, пока вкладка видима.
 - `node autopilot.mjs status` — первые строки: `title` и `details` из `nowView`, дальше как сейчас.
-- Не перезапускать службы `agent-autopilot` и `agent-autopilot-web` в обычных задачах (исполнитель работает внутри демона); перезапуск — только Tasks 6 и 9. `git push` в задачах не делать. Журнал — `docs/plans/2026-11-07-tmp-cleanup-and-now-status.progress.md`. Автор коммитов — L423R.
+- Не перезапускать службы `agent-autopilot` и `agent-autopilot-web` в обычных задачах (исполнитель работает внутри демона); перезапуск — только Tasks 6, 10 и 11. `git push` в задачах не делать. Журнал — `docs/plans/2026-11-07-tmp-cleanup-and-now-status.progress.md`. Автор коммитов — L423R.
 
 ## Review Focus
 
@@ -139,7 +139,25 @@
 
 - [x] **Step 1:** README: раздел «Что сейчас делает автопилот» — блок «Сейчас», его варианты из таблицы, поля `heartbeatAt`/`run`; раздел «Временные файлы» — `TMPDIR` запуска, очистка `/tmp`, правило tmpfiles. `npm test` (`docs.test.mjs`) → PASS. **Commit** — `docs: now-status and tmp cleanup`.
 
-### Task 9: [manual] Перезапуск демона и проверка с телефона
+### Task 9: queue add хранит путь плана относительно проекта · model: sonnet
+
+Найдено 2026-11-08: планировщик добавил планы командой `queue add <projectDir> <абсолютный путь плана>`, в `queue.json` попал абсолютный `planPath`. Пульт ищет план по относительному пути (`findPlan` сравнивает с `listPlans`), поэтому отметка шагов в «Ждёт вас» отвечала «План не найден». Данные очереди планировщик уже поправил руками (копия — `/root/queue.json.bak-20261108`).
+
+**Files:** Modify `lib/queue.mjs` (добавление), `lib/projects.mjs` (`findPlan`); Test `test/queue.test.mjs`, `test/projects.test.mjs`, `test/web-server.test.mjs`.
+
+- [ ] **Step 1:** Тесты (FAIL):
+  - `queue add /root/x /root/x/docs/p.md` пишет `planPath: "docs/p.md"`, `progressPath` — тоже относительный;
+  - путь вне `projectDir` → ошибка `План вне каталога проекта`;
+  - повтор с относительным и абсолютным путём одного плана не дублирует запись;
+  - `findPlan` находит план и по абсолютному пути внутри проекта;
+  - `POST /api/tick` для записи очереди со старым абсолютным путём → `ok`.
+- [ ] **Step 2:** Реализовать (`path.relative` от `projectDir` при добавлении и при чтении старых записей), `npm test` → PASS. **Commit** — `fix: queue stores plan paths relative to the project`.
+
+### Task 10: [planner] Перезапуск пульта после правки очереди · model: sonnet
+
+- [ ] **Step 1:** `systemctl restart agent-autopilot-web`. Затем `curl -s -X POST localhost:7690/api/tick` с `project`, абсолютным `plan` текущего ожидающего плана и несуществующей задачей `Task 99` → ответ не «План не найден». Итог — в журнал, коммит.
+
+### Task 11: [manual] Перезапуск демона и проверка с телефона
 
 - [ ] Планировщик в чате пульта, когда автопилот **не** в состоянии `running` (`node autopilot.mjs status`): `systemctl restart agent-autopilot`; через минуту `state.json` содержит `heartbeatAt`, `/api/now` не `down`. Итог — пользователю и в журнал; шаг отмечает планировщик.
 - [ ] Ты: открыть пульт → «Статус». Всё ок, если первой строкой сразу понятно, работает ли автопилот и над чем (проект, план, задача), а в шапке видно то же коротко.
