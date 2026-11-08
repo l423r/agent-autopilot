@@ -168,7 +168,7 @@
 
 ### Task 11: [planner] Перезапуск пульта после правки очереди и лимитов · model: sonnet
 
-- [ ] **Step 1:** `systemctl restart agent-autopilot-web`. Затем `curl -s -X POST localhost:7690/api/tick` с `project`, абсолютным `plan` текущего ожидающего плана и несуществующей задачей `Task 99` → ответ не «План не найден». Итог — в журнал, коммит.
+- [x] **Step 1:** `systemctl restart agent-autopilot-web`. Затем `curl -s -X POST localhost:7690/api/tick` с `project`, абсолютным `plan` текущего ожидающего плана и несуществующей задачей `Task 99` → ответ не «План не найден». Итог — в журнал, коммит.
 
 ### Task 12: [manual] Перезапуск демона и проверка с телефона
 
