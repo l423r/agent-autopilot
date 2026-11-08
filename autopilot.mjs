@@ -629,9 +629,10 @@ function queueCommand(cfg, args) {
     if (rest.length < 2) return fail('Использование: autopilot.mjs queue add <projectDir> <planPath>');
     const projectDir = resolve(rest[0]);
     const planPath = rest[1];
-    if (!existsSync(resolve(projectDir, planPath))) return fail(`нет плана: ${resolve(projectDir, planPath)}`);
     const progressPath = progressPathFor(projectByDir(cfg, projectDir) ?? {}, planPath);
-    saveQueue(cfg.stateDir, enqueue(q.items, { projectDir, planPath, progressPath }));
+    const items = enqueue(q.items, { projectDir, planPath, progressPath });
+    if (!existsSync(resolve(projectDir, planPath))) return fail(`нет плана: ${resolve(projectDir, planPath)}`);
+    saveQueue(cfg.stateDir, items);
     console.log(`Добавлено: ${planLabel(cfg, { projectDir, planPath })}`);
   } else if (sub === 'remove' || sub === 'up') {
     const n = Number(rest[0]);

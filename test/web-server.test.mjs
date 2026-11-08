@@ -297,7 +297,7 @@ test('GET /api/plan: активный план из active.json, план по �
   assert.equal(p.total, 1);
   for (const q of [
     `project=alpha&plan=${encodeURIComponent('../../etc/passwd')}`,
-    `project=alpha&plan=${encodeURIComponent(join(FIX, 'alpha', 'plans', '2026-01-a.md'))}`,
+    `project=alpha&plan=${encodeURIComponent(join(FIX, 'beta', 'plans', 'other.md'))}`,
     `project=alpha&plan=${encodeURIComponent('plans/other.md')}`,
     `project=alpha&plan=${encodeURIComponent('plans/journal.md')}`,
     `project=nope&plan=${encodeURIComponent('plans/other.md')}`,
@@ -707,7 +707,7 @@ test('POST /api/tick: 404 на чужой план, 400/409 по ошибкам 
   await start();
   for (const body of [
     { project: 'gamma', plan: '../../etc/passwd', task: 'Task 3', step: 2 },
-    { project: 'gamma', plan: join(dir, 'plans', 'p.md'), task: 'Task 3', step: 2 },
+    { project: 'gamma', plan: join(root, 'plans', 'p.md'), task: 'Task 3', step: 2 },
     { project: 'nope', plan: 'plans/p.md', task: 'Task 3', step: 2 },
     { project: 'gamma', plan: 'plans/p.md', task: 'Task 9', step: 1 },
   ]) assert.equal((await post('/api/tick', body)).status, 404, JSON.stringify(body));
@@ -848,4 +848,19 @@ test('panel APIs provide plan titles for queue and project cards', async () => {
 
 test('panel API tests leave shared plan fixtures unchanged', () => {
   assert.equal(readFileSync(join(FIX, 'alpha', 'plans', '2026-02-b.md'), 'utf8'), panelFixtureBefore);
+});
+
+
+test('POST /api/tick accepts a legacy absolute plan path from the queue', async () => {
+  const dir = tickProject();
+  mkdirSync(cfg.stateDir, { recursive: true });
+  const entry = { projectDir: dir, planPath: join(dir, 'plans/p.md'), progressPath: join(dir, 'plans/p.progress.md'), addedAt: '2026-11-01T10:00:00Z' };
+  writeFileSync(queueFile(), JSON.stringify([entry]));
+  await start();
+  const legacy = readQueue()[0];
+  const r = await tick('Task 3', 2, { plan: legacy.planPath });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await json(r), { ok: true, taskDone: false, commit: true });
+  assert.equal(planText(dir), TICK_PLAN.replace('- [ ] **Step 2:**', '- [x] **Step 2:**'));
+  assert.equal(commits(dir), '2');
 });

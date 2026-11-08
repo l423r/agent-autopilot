@@ -69,7 +69,8 @@ test('findPlan: найденный план и защита от чужих пу
   assert.equal(hit.plan.total, 3);
   assert.equal(findPlan(cfg, 'alpha', '../../../../etc/passwd'), null);
   assert.equal(findPlan(cfg, 'alpha', 'plans/../../beta/plans/other.md'), null);
-  assert.equal(findPlan(cfg, 'alpha', join(ALPHA, 'plans/2026-02-b.md')), null);
+  assert.deepEqual(findPlan(cfg, 'alpha', join(ALPHA, 'plans/2026-02-b.md')), hit);
+  assert.equal(findPlan(cfg, 'alpha', join(BETA, 'plans/other.md')), null);
   assert.equal(findPlan(cfg, 'alpha', 'plans/other.md'), null);
   assert.equal(findPlan(cfg, 'alpha', 'plans/2026-02-b.progress.md'), null);
   assert.equal(findPlan(cfg, 'alpha', 'plans/journal.md'), null);

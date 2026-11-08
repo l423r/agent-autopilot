@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { parsePlan } from '../lib/plan.mjs';
 import { loadQueue, saveQueue, enqueue, removeAt, moveUp, pickNext, shouldPreempt } from '../lib/queue.mjs';
 
@@ -188,4 +190,73 @@ test('enqueue and shouldPreempt treat "/p/" and "/p", "./x.md" and "x.md" as the
   assert.equal(enqueue(items, { projectDir: '/p', planPath: 'x.md' }, { front: true }).length, 1);
   const runnable = parsePlan('### Task 1: t\n- [ ] s\n');
   assert.equal(shouldPreempt(items, { projectDir: '/p', planPath: 'x.md' }, { readPlan: () => runnable }), null);
+});
+
+
+test('queue add stores absolute plan and progress paths relative to the project', t => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const config = join(dir, 'config.json');
+  writeFileSync(config, JSON.stringify({ projectDir: dir, planPath: 'p.md', stateDir: dir }));
+  writeFileSync(join(dir, 'p.md'), '# Plan');
+  const cli = plan => spawnSync(process.execPath,
+    [fileURLToPath(new URL('../autopilot.mjs', import.meta.url)), 'queue', 'add', dir, plan],
+    { encoding: 'utf8', env: { ...process.env, AUTOPILOT_CONFIG: config } });
+  const result = cli(join(dir, 'p.md'));
+  assert.equal(result.status, 0, result.stderr);
+  const [entry] = JSON.parse(readFileSync(join(dir, 'queue.json'), 'utf8'));
+  assert.equal(entry.planPath, 'p.md');
+  assert.equal(entry.progressPath, 'p.progress.md');
+  const again = cli('p.md');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(loadQueue(dir).items.length, 1);
+});
+
+test('enqueue rejects plans outside the project, including sibling prefixes', () => {
+  for (const planPath of ['/root/other/p.md', '../p.md', '/root/x-other/p.md']) {
+    assert.throws(() => enqueue([], { projectDir: '/root/x', planPath }), /План вне каталога проекта/);
+  }
+});
+
+test('enqueue deduplicates absolute and relative paths in both orders without mutating input', () => {
+  const relative = item('a');
+  const absolute = { ...relative, planPath: '/p/a/docs/plans/a.md', progressPath: '/p/a/docs/plans/a.progress.md' };
+  for (const [first, second] of [[relative, absolute], [absolute, relative]]) {
+    const q = enqueue([first], second);
+    assert.equal(q.length, 1);
+    assert.equal(q[0].planPath, relative.planPath);
+    assert.equal(q[0].progressPath, relative.progressPath);
+    assert.equal(q[0].addedAt, first.addedAt);
+  }
+  assert.equal(absolute.planPath, '/p/a/docs/plans/a.md');
+});
+
+test('loadQueue normalizes legacy absolute plan and progress paths and preserves metadata', t => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const entry = { ...item('a'), planPath: '/p/a/docs/plans/a.md', progressPath: '/p/a/docs/plans/a.progress.md', waitingUser: { taskId: 'Task 1' } };
+  writeFileSync(join(dir, 'queue.json'), JSON.stringify([entry]));
+  assert.deepEqual(loadQueue(dir), { items: [{ ...entry, planPath: 'docs/plans/a.md', progressPath: 'docs/plans/a.progress.md' }] });
+  assert.equal(JSON.parse(readFileSync(join(dir, 'queue.json'), 'utf8'))[0].planPath, entry.planPath, 'read does not rewrite disk');
+});
+
+
+test('queue add rejects an outside path before checking existence and leaves the queue intact', t => {
+  const dir = tmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const projectDir = join(dir, 'project');
+  const config = join(dir, 'config.json');
+  writeFileSync(config, JSON.stringify({ projectDir, planPath: 'p.md', stateDir: dir }));
+  const items = [item('a')];
+  saveQueue(dir, items);
+  const before = readFileSync(join(dir, 'queue.json'), 'utf8');
+  writeFileSync(join(dir, 'outside.md'), '# Outside');
+  for (const plan of [join(dir, 'outside.md'), join(dir, 'missing.md'), '../missing.md']) {
+    const r = spawnSync(process.execPath,
+      [fileURLToPath(new URL('../autopilot.mjs', import.meta.url)), 'queue', 'add', projectDir, plan],
+      { encoding: 'utf8', env: { ...process.env, AUTOPILOT_CONFIG: config } });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /План вне каталога проекта/);
+    assert.equal(readFileSync(join(dir, 'queue.json'), 'utf8'), before);
+  }
 });

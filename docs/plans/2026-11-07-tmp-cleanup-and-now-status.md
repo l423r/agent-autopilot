@@ -145,13 +145,13 @@
 
 **Files:** Modify `lib/queue.mjs` (добавление), `lib/projects.mjs` (`findPlan`); Test `test/queue.test.mjs`, `test/projects.test.mjs`, `test/web-server.test.mjs`.
 
-- [ ] **Step 1:** Тесты (FAIL):
+- [x] **Step 1:** Тесты (FAIL):
   - `queue add /root/x /root/x/docs/p.md` пишет `planPath: "docs/p.md"`, `progressPath` — тоже относительный;
   - путь вне `projectDir` → ошибка `План вне каталога проекта`;
   - повтор с относительным и абсолютным путём одного плана не дублирует запись;
   - `findPlan` находит план и по абсолютному пути внутри проекта;
   - `POST /api/tick` для записи очереди со старым абсолютным путём → `ok`.
-- [ ] **Step 2:** Реализовать (`path.relative` от `projectDir` при добавлении и при чтении старых записей), `npm test` → PASS. **Commit** — `fix: queue stores plan paths relative to the project`.
+- [x] **Step 2:** Реализовать (`path.relative` от `projectDir` при добавлении и при чтении старых записей), `npm test` → PASS. **Commit** — `fix: queue stores plan paths relative to the project`.
 
 ### Task 10: [planner] Перезапуск пульта после правки очереди · model: sonnet
 
