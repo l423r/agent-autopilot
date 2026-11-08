@@ -159,12 +159,12 @@
 
 **Files:** Modify `web/limits.mjs` (разбор окон Codex и Claude), `lib/accounts.mjs` (если выбор исполнителя читает те же проценты); Test `test/web-limits.test.mjs`, `test/accounts.test.mjs`.
 
-- [ ] **Step 1:** Тесты (FAIL):
+- [x] **Step 1:** Тесты (FAIL):
   - окно с `resets_at` в прошлом → `{ percent: 0, resetsAt: null, reset: true }`, в пульте «сброшен»;
   - окно с `resets_at` в будущем → как раньше;
   - выбор исполнителя не считает Codex «в лимите», если время сброса из лимита уже прошло;
   - то же для окон Claude.
-- [ ] **Step 2:** Реализовать (сравнение с `now`, передаваемым в функцию), `npm test` → PASS. **Commit** — `fix: limits after window reset show as free`.
+- [x] **Step 2:** Реализовать (сравнение с `now`, передаваемым в функцию), `npm test` → PASS. **Commit** — `fix: limits after window reset show as free`.
 
 ### Task 11: [planner] Перезапуск пульта после правки очереди и лимитов · model: sonnet
 

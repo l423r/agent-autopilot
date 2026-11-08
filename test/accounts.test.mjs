@@ -220,3 +220,12 @@ test('without executor pickExecutor matches pickAccount on old states', () => {
     }
   }
 });
+
+for (const offset of [-1, 0, 1]) {
+  test(`executor: Codex reset offset ${offset} ms from now`, () => {
+    const state = { account: 'основная', accountLimits: { codex: new Date(+NOW + offset).toISOString() } };
+    const expected = offset <= 0 ? { name: 'codex', kind: 'codex', switched: 'back' }
+      : { name: 'основная', kind: 'claude', switched: null };
+    assert.deepEqual(pickExecutor(THREE, state, AUTO, CODEX_CFG, NOW), expected);
+  });
+}

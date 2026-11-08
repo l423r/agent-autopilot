@@ -833,7 +833,7 @@ function limitBlock(name, w) {
   const percent = Math.max(0, Math.min(100, w.percent));
   row.append(el('span', 'lname', name), el('span', 'percent', `${Math.round(w.percent)}%`));
   const bar = progressBar(percent, 100, `bar${percent >= 90 ? ' bad' : percent >= 70 ? ' warn' : ''}`);
-  block.append(row, bar, el('div', 'meta', resetText(w.resetsAt)));
+  block.append(row, bar, el('div', 'meta', w.reset ? 'сброшен' : resetText(w.resetsAt)));
   return block;
 }
 

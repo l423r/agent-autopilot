@@ -1,12 +1,14 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fetchLimits, fetchCodexLimits } from '../web/limits.mjs';
+import { runInNewContext } from 'node:vm';
 import { startServer } from '../web/server.mjs';
 import { saveState } from '../lib/state.mjs';
 
+const NOW = new Date('2026-10-01T00:00:00Z');
 const TOKEN = 'sk-ant-oat01-secret-token';
 const USAGE = {
   five_hour: { utilization: 11.0, resets_at: '2026-10-21T18:20:00Z' },
@@ -30,7 +32,7 @@ const fakeFetch = (status, body) => async (url, opts) => {
 };
 
 test('fetchLimits: normal answer → percent and reset time of both windows', async () => {
-  const limits = await fetchLimits({ credentialsFile, fetchImpl: fakeFetch(200, USAGE) });
+  const limits = await fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(200, USAGE) });
   assert.deepEqual(limits, {
     fiveHour: { percent: 11, resetsAt: '2026-10-21T18:20:00Z' },
     week: { percent: 42.5, resetsAt: '2026-10-28T06:00:00Z' },
@@ -43,20 +45,20 @@ test('fetchLimits: normal answer → percent and reset time of both windows', as
 });
 
 test('fetchLimits: 401 → error without the token', async () => {
-  const limits = await fetchLimits({ credentialsFile, fetchImpl: fakeFetch(401, { error: `bad token ${TOKEN}` }) });
+  const limits = await fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(401, { error: `bad token ${TOKEN}` }) });
   assert.equal(typeof limits.error, 'string');
   assert.match(limits.error, /401/);
   assert.ok(!limits.error.includes(TOKEN));
 });
 
 test('fetchLimits: not JSON → error', async () => {
-  const limits = await fetchLimits({ credentialsFile, fetchImpl: fakeFetch(200, '<html>oops</html>') });
+  const limits = await fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(200, '<html>oops</html>') });
   assert.equal(typeof limits.error, 'string');
   assert.equal(limits.fiveHour, undefined);
 });
 
 test('fetchLimits: other format → error', async () => {
-  const limits = await fetchLimits({ credentialsFile, fetchImpl: fakeFetch(200, { five_hour: null }) });
+  const limits = await fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(200, { five_hour: null }) });
   assert.equal(typeof limits.error, 'string');
 });
 
@@ -68,7 +70,7 @@ test('fetchLimits: no credentials file → error, no request', async () => {
 
 test('fetchLimits: network error mentioning the token → error without the token', async () => {
   const fetchImpl = async () => { throw new Error(`connect failed for Bearer ${TOKEN}`); };
-  const limits = await fetchLimits({ credentialsFile, fetchImpl });
+  const limits = await fetchLimits({ now: NOW, credentialsFile, fetchImpl });
   assert.equal(typeof limits.error, 'string');
   assert.ok(!limits.error.includes(TOKEN));
 });
@@ -83,7 +85,7 @@ afterEach(async () => {
 test('/api/limits: cached for 60 s — two requests, one fetch', async () => {
   const fetchImpl = fakeFetch(200, USAGE);
   const cfg = { projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir: join(root, 'state') };
-  srv = await startServer(cfg, { port: 0, limitsFetch: () => fetchLimits({ credentialsFile, fetchImpl }) });
+  srv = await startServer(cfg, { port: 0, limitsFetch: () => fetchLimits({ now: NOW, credentialsFile, fetchImpl }) });
   const base = `http://127.0.0.1:${srv.port}`;
   const first = await (await fetch(`${base}/api/limits`)).json();
   const second = await (await fetch(`${base}/api/limits`)).json();
@@ -97,7 +99,7 @@ test('/api/limits: cached for 60 s — two requests, one fetch', async () => {
 
 test('/api/limits: error → 200 { error }, other API still works', async () => {
   const cfg = { projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir: join(root, 'state') };
-  srv = await startServer(cfg, { port: 0, limitsFetch: () => fetchLimits({ credentialsFile, fetchImpl: fakeFetch(401, 'no') }) });
+  srv = await startServer(cfg, { port: 0, limitsFetch: () => fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(401, 'no') }) });
   const base = `http://127.0.0.1:${srv.port}`;
   const res = await fetch(`${base}/api/limits`);
   assert.equal(res.status, 200);
@@ -118,7 +120,7 @@ test('/api/limits: per account, the active one from state.json is marked; missin
   const files = [];
   const limitsFetch = account => {
     files.push(account.credentialsFile);
-    return fetchLimits({ credentialsFile: account.credentialsFile ?? credentialsFile, fetchImpl: fakeFetch(200, USAGE) });
+    return fetchLimits({ now: NOW, credentialsFile: account.credentialsFile ?? credentialsFile, fetchImpl: fakeFetch(200, USAGE) });
   };
   srv = await startServer(cfg, { port: 0, limitsFetch });
   const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
@@ -160,7 +162,7 @@ test('fetchCodexLimits: newest session, last event with rate_limits', () => {
   const home = join(root, 'codex');
   session(home, '05', 'rollout-old.jsonl', [rl(90, 90)], 1000);
   session(home, '06', 'rollout-new.jsonl', [rl(10, 20), { type: 'other' }, rl(30, 40), 'not json'], 2000);
-  assert.deepEqual(fetchCodexLimits({ codexHome: home }), {
+  assert.deepEqual(fetchCodexLimits({ now: NOW, codexHome: home }), {
     fiveHour: { percent: 30, resetsAt: new Date(1792000000 * 1000).toISOString() },
     week: { percent: 40, resetsAt: new Date((1792000000 + 86400) * 1000).toISOString() },
   });
@@ -170,26 +172,26 @@ test('fetchCodexLimits: newest file without events → falls back to an older on
   const home = join(root, 'codex');
   session(home, '05', 'rollout-old.jsonl', [rl(55, 66)], 1000);
   session(home, '06', 'rollout-new.jsonl', [{ type: 'other' }], 2000);
-  assert.equal(fetchCodexLimits({ codexHome: home }).fiveHour.percent, 55);
+  assert.equal(fetchCodexLimits({ now: NOW, codexHome: home }).fiveHour.percent, 55);
 });
 
 test('fetchCodexLimits: no directory / no events → «нет данных», no throw', () => {
   const none = { error: 'Нет данных о лимитах Codex' };
-  assert.deepEqual(fetchCodexLimits({ codexHome: join(root, 'missing') }), none);
+  assert.deepEqual(fetchCodexLimits({ now: NOW, codexHome: join(root, 'missing') }), none);
   const home = join(root, 'empty');
   session(home, '06', 'rollout-x.jsonl', [{ type: 'other' }], 2000);
-  assert.deepEqual(fetchCodexLimits({ codexHome: home }), none);
+  assert.deepEqual(fetchCodexLimits({ now: NOW, codexHome: home }), none);
 });
 
 test('/api/limits: codex account → its own row, marked as executor, no network call', async () => {
   const home = join(root, 'codex');
-  session(home, '06', 'rollout-new.jsonl', [rl(12, 34)], 2000);
+  session(home, '06', 'rollout-new.jsonl', [rl(12, 34, 4102444800)], 2000);
   const cfg = {
     projectDir: root, planPath: 'plan.md', autopilotDir: root, stateDir: join(root, 'state'), executor: 'codex',
     accounts: [{ name: 'основная' }, { name: 'codex', kind: 'codex', codexHome: home }],
   };
   const seen = [];
-  srv = await startServer(cfg, { port: 0, limitsFetch: a => { seen.push(a.name); return fetchLimits({ credentialsFile, fetchImpl: fakeFetch(200, USAGE) }); } });
+  srv = await startServer(cfg, { port: 0, limitsFetch: a => { seen.push(a.name); return fetchLimits({ now: NOW, credentialsFile, fetchImpl: fakeFetch(200, USAGE) }); } });
   const body = await (await fetch(`http://127.0.0.1:${srv.port}/api/limits`)).json();
   assert.deepEqual(seen, ['основная']);
   const row = body.accounts[1];
@@ -198,4 +200,35 @@ test('/api/limits: codex account → its own row, marked as executor, no network
   assert.equal(row.fiveHour.percent, 12);
   assert.equal(row.week.percent, 34);
   assert.equal(body.accounts[0].executor, undefined);
+});
+
+for (const offset of [-1, 0, 1]) {
+  test(`Claude windows: reset offset ${offset} ms from now`, async () => {
+    const resetsAt = new Date(+NOW + offset).toISOString();
+    const w = { utilization: 100, resets_at: resetsAt };
+    const result = await fetchLimits({ credentialsFile, now: NOW,
+      fetchImpl: fakeFetch(200, { five_hour: w, seven_day: w }) });
+    const expected = offset <= 0 ? { percent: 0, resetsAt: null, reset: true } : { percent: 100, resetsAt };
+    assert.deepEqual(result, { fiveHour: expected, week: expected });
+  });
+  test(`Codex windows: reset offset ${offset} seconds from now`, () => {
+    const home = join(root, 'codex');
+    const event = rl(100, 100, +NOW / 1000 + offset);
+    event.payload.rate_limits.secondary.resets_at = +NOW / 1000 + offset;
+    session(home, '06', 'reset.jsonl', [event], 2000);
+    const expected = offset <= 0 ? { percent: 0, resetsAt: null, reset: true }
+      : { percent: 100, resetsAt: new Date(+NOW + offset * 1000).toISOString() };
+    assert.deepEqual(fetchCodexLimits({ codexHome: home, now: NOW }), { fiveHour: expected, week: expected });
+  });
+}
+
+test('panel: reset window displays zero and «сброшен», unknown time stays distinct', () => {
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  const source = html.slice(html.indexOf('function resetText('), html.indexOf('async function loadLimits('));
+  const el = (tag, cls, text = '') => ({ cls, text, children: [], append(...nodes) { this.children.push(...nodes); } });
+  const render = w => runInNewContext(source + '; limitBlock("5 ч", w)', { el, progressBar: () => el('div', 'bar'), w });
+  const reset = render({ percent: 0, resetsAt: null, reset: true });
+  assert.equal(reset.children[0].children[1].text, '0%');
+  assert.equal(reset.children[2].text, 'сброшен');
+  assert.equal(render({ percent: 10, resetsAt: null }).children[2].text, 'время сброса неизвестно');
 });
